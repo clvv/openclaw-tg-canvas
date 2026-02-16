@@ -6,7 +6,10 @@ metadata:
   {
     "openclaw": {
       "emoji": "🖼️",
-      "requires": { "bins": ["node", "cloudflared"] },
+      "requires": { 
+        "bins": ["node", "cloudflared"],
+        "env": ["BOT_TOKEN", "ALLOWED_USER_IDS", "JWT_SECRET", "MINIAPP_URL"]
+      },
       "install": [
         {
           "id": "npm",
