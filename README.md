@@ -29,7 +29,28 @@ This package provides a Telegram Mini App that renders agent-generated HTML or m
    BOT_TOKEN=... MINIAPP_URL=https://xxxx.trycloudflare.com node scripts/setup-bot.js
    ```
 
-## HTTPS via nginx + Let’s Encrypt (domain-based, no Cloudflare)
+## Security
+
+**What the Cloudflare tunnel exposes publicly:**
+
+| Endpoint | Public? | Auth |
+| --- | --- | --- |
+| `GET /` | ✅ | None (serves static Mini App HTML) |
+| `POST /auth` | ✅ | Telegram `initData` HMAC-SHA256 + `ALLOWED_USER_IDS` check |
+| `GET /state` | ✅ | JWT required |
+| `GET /ws` | ✅ | JWT required (WebSocket upgrade) |
+| `POST /push` | ❌ loopback-only | Enforced at socket level; optional `PUSH_TOKEN` for defense-in-depth |
+| `POST /clear` | ❌ loopback-only | Same as above |
+| `GET /health` | ❌ loopback-only | Same as above |
+
+Loopback enforcement for `/push`, `/clear`, and `/health` is done at the TCP socket level (`req.socket.remoteAddress`), not via headers — it cannot be spoofed via `X-Forwarded-For`.
+
+**Recommendations:**
+- Set `PUSH_TOKEN` even though `/push` is already loopback-restricted (defense-in-depth).
+- Use a strong random `JWT_SECRET` (32+ bytes).
+- The Cloudflare tunnel exposes the Mini App publicly — `ALLOWED_USER_IDS` is the primary access control gate.
+
+## HTTPS via nginx + Let's Encrypt (domain-based, no Cloudflare)
 
 Use this if you already have a subdomain pointing at your VPS.
 
@@ -173,13 +194,13 @@ Ensure `SKILL.md`, scripts, and `.env.example` are included. Tag the repo with a
 
 ## Security
 
-Telegram Mini Apps pass a signed `initData` payload. The server validates this signature using your bot token, enforces `auth_date` freshness, and restricts access to `ALLOWED_USER_IDS`. JWTs are short‑lived (`JWT_TTL_SECONDS`). The `/push` endpoint listens only on loopback and should never be exposed publicly. **If you expose /push beyond loopback, set `PUSH_TOKEN`.**
+Telegram Mini Apps pass a signed `initData` payload. The server validates this signature using your bot token, enforces `auth_date` freshness, and restricts access to `ALLOWED_USER_IDS`. JWTs are short-lived (`JWT_TTL_SECONDS`). The `/push` endpoint listens only on loopback and should never be exposed publicly. **If you expose /push beyond loopback, set `PUSH_TOKEN`.**
 
 Also protect secrets: keep `.env` permissions tight (e.g., `chmod 600 .env`) or use a secrets store.
 
 ## Canvas Learnings (from live testing)
 
-- **Inline scripts in injected HTML won’t run** in Telegram WebView; the renderer re‑inserts `<script>` tags to execute.
-- **CORS can block direct fetches** from the Mini App; embed sanctioned widgets (e.g., TradingView) or proxy data server‑side.
-- **WebSocket upgrades require nginx headers** (`Upgrade`/`Connection`), or the app will show “Connecting” loops.
+- **Inline scripts in injected HTML won't run** in Telegram WebView; the renderer re-inserts `<script>` tags to execute.
+- **CORS can block direct fetches** from the Mini App; embed sanctioned widgets (e.g., TradingView) or proxy data server-side.
+- **WebSocket upgrades require nginx headers** (`Upgrade`/`Connection`), or the app will show "Connecting" loops.
 - **HTTPS is mandatory** for Mini Apps.
