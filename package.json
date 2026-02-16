@@ -1,0 +1,15 @@
+{
+  "name": "openclaw-tg-canvas",
+  "version": "0.1.0",
+  "description": "Telegram Mini App Canvas for OpenClaw",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
