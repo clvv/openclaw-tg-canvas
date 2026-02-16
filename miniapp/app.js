@@ -4,40 +4,61 @@
 (() => {
   const tg = window.Telegram?.WebApp;
 
-  const contentEl = document.getElementById('content');
+  const contentEl = document.querySelector('.content-inner');
   const connDot = document.getElementById('connDot');
+  const connText = document.getElementById('connText');
+  const lastUpdatedEl = document.getElementById('lastUpdated');
 
   let jwt = null;
   let ws = null;
   let reconnectTimer = null;
   let connectedFlashTimer = null;
+  let lastUpdatedTs = null;
+  let relativeTimer = null;
 
   // ---------- UI Helpers ----------
-  function setConnected(isConnected) {
-    connDot.classList.toggle('connected', isConnected);
+  function setStatus(state) {
+    connDot.classList.remove('connected', 'connecting');
+    if (state === 'connected') {
+      connDot.classList.add('connected');
+      connText.textContent = 'Connected';
+    } else if (state === 'connecting' || state === 'reconnecting') {
+      connDot.classList.add('connecting');
+      connText.textContent = state === 'reconnecting' ? 'Reconnecting…' : 'Connecting…';
+    } else {
+      connText.textContent = 'Offline';
+    }
   }
 
-  function showCenter(message, withSpinner = false, buttonText = null, buttonHandler = null) {
+  function showCenter(message, withSpinner = false, buttonText = null, buttonHandler = null, useCard = true) {
     contentEl.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.className = 'center fade-in';
 
+    let holder = wrap;
+    if (useCard) {
+      const card = document.createElement('div');
+      card.className = 'empty-card';
+      wrap.appendChild(card);
+      holder = card;
+    }
+
     if (withSpinner) {
       const spinner = document.createElement('div');
       spinner.className = 'spinner';
-      wrap.appendChild(spinner);
+      holder.appendChild(spinner);
     }
 
     const text = document.createElement('div');
     text.textContent = message;
-    wrap.appendChild(text);
+    holder.appendChild(text);
 
     if (buttonText && buttonHandler) {
       const btn = document.createElement('button');
       btn.className = 'button';
       btn.textContent = buttonText;
       btn.addEventListener('click', buttonHandler);
-      wrap.appendChild(btn);
+      holder.appendChild(btn);
     }
 
     contentEl.appendChild(wrap);
@@ -63,6 +84,29 @@
     connectedFlashTimer = setTimeout(() => {
       note.remove();
     }, 1200);
+  }
+
+  function formatRelative(ts) {
+    if (!ts) return '—';
+    const delta = Math.max(0, Date.now() - ts);
+    const sec = Math.floor(delta / 1000);
+    if (sec < 5) return 'just now';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const days = Math.floor(hr / 24);
+    return `${days}d ago`;
+  }
+
+  function updateLastUpdated(ts) {
+    lastUpdatedTs = ts || Date.now();
+    lastUpdatedEl.textContent = `Last updated ${formatRelative(lastUpdatedTs)}`;
+    clearInterval(relativeTimer);
+    relativeTimer = setInterval(() => {
+      lastUpdatedEl.textContent = `Last updated ${formatRelative(lastUpdatedTs)}`;
+    }, 30000);
   }
 
   // ---------- Markdown Renderer (minimal) ----------
@@ -165,23 +209,41 @@
   }
 
   // ---------- Rendering ----------
+  function renderA2UI(container, a2uiPayload) {
+    // Optional A2UI runtime hook. If present, use it. Otherwise show JSON.
+    const runtime = window.OpenClawA2UI || window.A2UI || null;
+    if (runtime && typeof runtime.render === 'function') {
+      try {
+        runtime.render(container, a2uiPayload);
+        return;
+      } catch (_) {
+        // fall through to JSON
+      }
+    }
+    const pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(a2uiPayload, null, 2);
+    container.appendChild(pre);
+  }
+
   function renderPayload(payload) {
     if (!payload || payload.type === 'clear') {
-      showCenter('Waiting for content...');
+      showCenter('Waiting for content…');
       return;
     }
 
     const { format, content } = payload;
     contentEl.innerHTML = '';
-    contentEl.classList.add('fade-in');
 
     const container = document.createElement('div');
+    container.className = 'fade-in';
 
     if (format === 'html') {
       // Trusted HTML from server (agent only)
       container.innerHTML = content || '';
     } else if (format === 'markdown') {
       container.innerHTML = renderMarkdown(content || '');
+    } else if (format === 'a2ui') {
+      renderA2UI(container, content || {});
     } else {
       // text
       const pre = document.createElement('pre');
@@ -190,7 +252,7 @@
     }
 
     contentEl.appendChild(container);
-    setTimeout(() => contentEl.classList.remove('fade-in'), 250);
+    updateLastUpdated(Date.now());
   }
 
   // ---------- Auth + Networking ----------
@@ -229,10 +291,11 @@
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${proto}//${location.host}/ws?token=${encodeURIComponent(jwt)}`;
 
+    setStatus('connecting');
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      setConnected(true);
+      setStatus('connected');
       showConnectedFlash();
     };
 
@@ -253,13 +316,13 @@
     };
 
     ws.onerror = () => {
-      setConnected(false);
-      showCenter('Connection lost. Reconnecting...', true);
+      setStatus('reconnecting');
+      showCenter('Connection lost. Reconnecting…', true);
     };
 
     ws.onclose = () => {
-      setConnected(false);
-      showCenter('Connection lost. Reconnecting...', true);
+      setStatus('reconnecting');
+      showCenter('Connection lost. Reconnecting…', true);
       scheduleReconnect();
     };
   }
@@ -273,10 +336,12 @@
 
   // ---------- Boot ----------
   async function boot() {
-    showCenter('Connecting...', true);
+    setStatus('connecting');
+    showCenter('Connecting…', true, null, null, false);
 
     const authed = await authenticate();
     if (!authed) {
+      setStatus('disconnected');
       showCenter('Access denied', false, 'Close', () => tg?.close?.());
       return;
     }
@@ -284,7 +349,7 @@
     // Fetch current state before WS connect
     const state = await fetchState();
     if (state) renderPayload(state);
-    else showCenter('Waiting for content...');
+    else showCenter('Waiting for content…');
 
     connectWS();
   }

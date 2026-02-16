@@ -47,6 +47,8 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 - CLI:
   ```bash
   tg-canvas push --html "<h1>Hello</h1>"
+  tg-canvas push --markdown "# Hello"
+  tg-canvas push --a2ui @./a2ui.json
   ```
 - HTTP API:
   ```bash
@@ -60,6 +62,12 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 - The `/push` endpoint is loopback-only and should not be exposed publicly.
 - Mini App access is authenticated with Telegram `initData` verification and filtered by `ALLOWED_USER_IDS`.
 
+## Commands
+
+- `tg-canvas push` — push HTML/markdown/text/A2UI
+- `tg-canvas clear` — clear the canvas
+- `tg-canvas health` — check server health
+
 ## Configuration
 
 | Variable | Required | Description |
@@ -69,3 +77,5 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 | `JWT_SECRET` | Yes | Secret used to sign session tokens. Use a long random value. |
 | `PORT` | No | Server port (default: `3721`). |
 | `MINIAPP_URL` | Yes (for bot setup) | HTTPS URL of the Mini App (Cloudflare tunnel). |
+| `PUSH_TOKEN` | No | Shared secret for `/push` and CLI (sent via `X-Push-Token`). |
+| `TG_CANVAS_URL` | No | Base URL for the CLI (default: `http://127.0.0.1:3721`). |

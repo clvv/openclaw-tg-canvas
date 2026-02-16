@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.js"
   },
+  "bin": {
+    "tg-canvas": "bin/tg-canvas.js"
+  },
   "dependencies": {
     "ws": "^8.0.0"
   },
