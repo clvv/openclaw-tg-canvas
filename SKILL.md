@@ -1,7 +1,7 @@
 ---
 name: tg-canvas
 description: "Telegram Mini App Canvas. Renders agent-generated content (HTML, markdown) in a Telegram Mini App. Authenticated via Telegram initData — only approved users can view. Push content with `tg-canvas push` or via the /push API."
-homepage: https://github.com/openclaw/tg-canvas
+homepage: https://github.com/clvv/openclaw-tg-canvas
 metadata:
   {
     "openclaw": {
