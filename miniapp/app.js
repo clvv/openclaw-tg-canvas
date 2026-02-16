@@ -12,7 +12,6 @@
   let jwt = null;
   let ws = null;
   let reconnectTimer = null;
-  let connectedFlashTimer = null;
   let lastUpdatedTs = null;
   let relativeTimer = null;
 
@@ -62,28 +61,6 @@
     }
 
     contentEl.appendChild(wrap);
-  }
-
-  function showConnectedFlash() {
-    const note = document.createElement('div');
-    note.style.position = 'fixed';
-    note.style.top = '10px';
-    note.style.left = '50%';
-    note.style.transform = 'translateX(-50%)';
-    note.style.background = 'var(--tg-secondary-bg)';
-    note.style.color = 'var(--tg-hint)';
-    note.style.padding = '6px 10px';
-    note.style.borderRadius = '10px';
-    note.style.fontSize = '12px';
-    note.style.zIndex = '100';
-    note.style.opacity = '0.95';
-    note.textContent = 'Connected';
-    document.body.appendChild(note);
-
-    clearTimeout(connectedFlashTimer);
-    connectedFlashTimer = setTimeout(() => {
-      note.remove();
-    }, 1200);
   }
 
   function formatRelative(ts) {
@@ -296,7 +273,6 @@
 
     ws.onopen = () => {
       setStatus('connected');
-      showConnectedFlash();
     };
 
     ws.onmessage = (event) => {
