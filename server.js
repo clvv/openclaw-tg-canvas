@@ -439,8 +439,5 @@ setInterval(() => {
 }, 30_000).unref();
 
 server.listen(PORT, () => {
-  console.log("Telegram Mini App Canvas server running");
-  console.log(`HTTP port: ${PORT}`);
-  console.log(`Allowed users: ${ALLOWED_USER_IDS.length ? ALLOWED_USER_IDS.join(", ") : "(none)"}`);
-  console.log("WebSocket endpoint: /ws (token required)");
+  console.log(`tg-canvas server listening on :${PORT}`);
 });

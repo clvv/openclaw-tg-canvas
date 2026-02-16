@@ -46,7 +46,7 @@ async function main() {
   const MINIAPP_URL = process.env.MINIAPP_URL || envFromFile.MINIAPP_URL;
 
   if (!BOT_TOKEN || !MINIAPP_URL) {
-    console.error('Missing BOT_TOKEN or MINIAPP_URL. Set env vars or .env file.');
+    console.error('Missing BOT_TOKEN or MINIAPP_URL');
     process.exit(1);
   }
 
@@ -58,18 +58,16 @@ async function main() {
         web_app: { url: MINIAPP_URL },
       },
     });
-    console.log('✅ Menu button configured.');
+    console.log('Menu button configured.');
 
     await callTelegram(BOT_TOKEN, 'setMyCommands', {
       commands: [
         { command: 'canvas', description: 'Open Canvas' },
       ],
     });
-    console.log('✅ /canvas command registered.');
-
-    console.log('Done. Ensure your bot handles /canvas by sending an inline button to the Mini App.');
+    console.log('/canvas command registered.');
   } catch (err) {
-    console.error(`❌ ${err.message}`);
+    console.error(err.message || String(err));
     process.exit(1);
   }
 }
