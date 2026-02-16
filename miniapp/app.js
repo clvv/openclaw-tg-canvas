@@ -222,6 +222,14 @@
     if (format === 'html') {
       // Trusted HTML from server (agent only)
       container.innerHTML = content || '';
+      // Execute inline scripts (Telegram WebView doesn't run scripts from innerHTML)
+      container.querySelectorAll('script').forEach((oldScript) => {
+        const s = document.createElement('script');
+        if (oldScript.src) s.src = oldScript.src;
+        s.type = oldScript.type || 'text/javascript';
+        s.text = oldScript.textContent || '';
+        oldScript.replaceWith(s);
+      });
     } else if (format === 'markdown') {
       container.innerHTML = renderMarkdown(content || '');
     } else if (format === 'a2ui') {
