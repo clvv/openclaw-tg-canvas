@@ -170,3 +170,10 @@ Ensure `SKILL.md`, scripts, and `.env.example` are included. Tag the repo with a
 ## Security
 
 Telegram Mini Apps pass a signed `initData` payload. The server validates this signature using your bot token, enforces `auth_date` freshness, and restricts access to `ALLOWED_USER_IDS`. JWTs are short‑lived (`JWT_TTL_SECONDS`). The `/push` endpoint listens only on loopback and should never be exposed publicly.
+
+## Canvas Learnings (from live testing)
+
+- **Inline scripts in injected HTML won’t run** in Telegram WebView; the renderer re‑inserts `<script>` tags to execute.
+- **CORS can block direct fetches** from the Mini App; embed sanctioned widgets (e.g., TradingView) or proxy data server‑side.
+- **WebSocket upgrades require nginx headers** (`Upgrade`/`Connection`), or the app will show “Connecting” loops.
+- **HTTPS is mandatory** for Mini Apps.
