@@ -18,8 +18,12 @@ const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || "")
   .map((s) => s.trim())
   .filter(Boolean);
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString("hex");
+const JWT_TTL_SECONDS = parseInt(process.env.JWT_TTL_SECONDS || "900", 10); // 15m
+const INIT_DATA_MAX_AGE_SECONDS = parseInt(process.env.INIT_DATA_MAX_AGE_SECONDS || "300", 10); // 5m
 const PORT = parseInt(process.env.PORT || "3721", 10);
 const PUSH_TOKEN = process.env.PUSH_TOKEN || ""; // optional
+const RATE_LIMIT_AUTH_PER_MIN = parseInt(process.env.RATE_LIMIT_AUTH_PER_MIN || "30", 10);
+const RATE_LIMIT_STATE_PER_MIN = parseInt(process.env.RATE_LIMIT_STATE_PER_MIN || "120", 10);
 
 // ---- Helpers ----
 const MINIAPP_DIR = path.join(__dirname, "miniapp");
@@ -93,7 +97,10 @@ function verifyJwt(token) {
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
     const payloadJson = Buffer.from(payloadB64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString();
     const payload = JSON.parse(payloadJson);
-    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (!payload.exp) return null;
+    if (now > payload.exp) return null;
+    if (payload.iat && payload.iat > now + 60) return null;
     return payload;
   } catch (err) {
     return null;
@@ -142,6 +149,24 @@ function verifyTelegramInitData(initData) {
     return { ok: false, error: "User not allowed" };
   }
 
+  const authDate = parseInt(params.get("auth_date") || "0", 10);
+  if (!authDate) {
+    return { ok: false, error: "Missing auth_date" };
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (authDate > nowSec + 60) {
+    return { ok: false, error: "auth_date is in the future" };
+  }
+  if (nowSec - authDate > INIT_DATA_MAX_AGE_SECONDS) {
+    return { ok: false, error: "initData expired" };
+  }
+
+  const replayKey = `${user.id}:${authDate}:${hash}`;
+  if (isInitDataReplayed(replayKey)) {
+    return { ok: false, error: "initData replayed" };
+  }
+  markInitDataUsed(replayKey, INIT_DATA_MAX_AGE_SECONDS);
+
   return { ok: true, user };
 }
 
@@ -171,6 +196,37 @@ function serveFile(res, filePath) {
     res.writeHead(200, { "Content-Type": contentTypeFor(filePath) });
     res.end(data);
   });
+}
+
+// ---- Simple in-memory rate limiter ----
+const rateLimitBuckets = new Map();
+function rateLimit(key, limit, windowMs) {
+  const now = Date.now();
+  const bucket = rateLimitBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + windowMs;
+  }
+  bucket.count += 1;
+  rateLimitBuckets.set(key, bucket);
+  return bucket.count <= limit;
+}
+
+// ---- initData replay cache ----
+const initDataReplay = new Map();
+function markInitDataUsed(key, ttlSeconds) {
+  const now = Date.now();
+  initDataReplay.set(key, now + ttlSeconds * 1000);
+}
+function isInitDataReplayed(key) {
+  const now = Date.now();
+  const expires = initDataReplay.get(key);
+  if (!expires) return false;
+  if (now > expires) {
+    initDataReplay.delete(key);
+    return false;
+  }
+  return true;
 }
 
 // ---- In-memory canvas state ----
@@ -212,7 +268,10 @@ const server = http.createServer(async (req, res) => {
 
     // Auth endpoint
     if (req.method === "POST" && url.pathname === "/auth") {
-      console.log("/auth", req.socket.remoteAddress);
+      const ip = req.socket.remoteAddress || "unknown";
+      if (!rateLimit(`auth:${ip}`, RATE_LIMIT_AUTH_PER_MIN, 60_000)) {
+        return sendJson(res, 429, { error: "Rate limit" });
+      }
       const body = await readBodyJson(req);
       const initData = body.initData;
       if (!initData) return sendJson(res, 400, { error: "Missing initData" });
@@ -220,8 +279,9 @@ const server = http.createServer(async (req, res) => {
       const result = verifyTelegramInitData(initData);
       if (!result.ok) return sendJson(res, 401, { error: result.error });
 
-      const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
-      const token = signJwt({ userId: String(result.user.id), exp });
+      const now = Math.floor(Date.now() / 1000);
+      const exp = now + JWT_TTL_SECONDS;
+      const token = signJwt({ userId: String(result.user.id), iat: now, exp, jti: crypto.randomUUID() });
       return sendJson(res, 200, {
         token,
         user: { id: result.user.id, username: result.user.username || null },
@@ -230,7 +290,10 @@ const server = http.createServer(async (req, res) => {
 
     // State endpoint
     if (req.method === "GET" && url.pathname === "/state") {
-      console.log("/state", req.socket.remoteAddress);
+      const ip = req.socket.remoteAddress || "unknown";
+      if (!rateLimit(`state:${ip}`, RATE_LIMIT_STATE_PER_MIN, 60_000)) {
+        return sendJson(res, 429, { error: "Rate limit" });
+      }
       const token = url.searchParams.get("token") || "";
       const payload = verifyJwt(token);
       if (!payload) return sendJson(res, 401, { error: "Invalid token" });
@@ -238,6 +301,16 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { content: currentState.content, format: currentState.format });
       }
       return sendJson(res, 200, { content: null });
+    }
+
+    // Health endpoint
+    if (req.method === "GET" && url.pathname === "/health") {
+      return sendJson(res, 200, {
+        ok: true,
+        uptime: process.uptime(),
+        clients: wsClients.size,
+        hasState: !!currentState,
+      });
     }
 
     // Push endpoint (loopback only)
@@ -256,10 +329,35 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      const ip = req.socket.remoteAddress || 'unknown';
+      if (!rateLimit(`auth:${ip}`, RATE_LIMIT_AUTH_PER_MIN, 60_000)) {
+        return sendJson(res, 429, { error: "Rate limit" });
+      }
       const body = await readBodyJson(req);
-      const content = body.content;
-      const format = body.format || "html";
-      if (!content) return sendJson(res, 400, { error: "Missing content" });
+
+      let content = body.content;
+      let format = body.format || null;
+
+      if (!format) {
+        if (typeof body.html !== "undefined") {
+          format = "html";
+          content = body.html;
+        } else if (typeof body.markdown !== "undefined") {
+          format = "markdown";
+          content = body.markdown;
+        } else if (typeof body.text !== "undefined") {
+          format = "text";
+          content = body.text;
+        } else if (typeof body.a2ui !== "undefined") {
+          format = "a2ui";
+          content = body.a2ui;
+        }
+      }
+
+      if (!format) format = "html";
+      if (typeof content === "undefined" || content === null) {
+        return sendJson(res, 400, { error: "Missing content" });
+      }
 
       currentState = { content, format };
       const clients = broadcast({ type: "canvas", content, format });
@@ -317,7 +415,12 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  console.log("/ws upgrade", req.socket.remoteAddress);
+  const ip = req.socket.remoteAddress || "unknown";
+  if (!rateLimit(`ws:${ip}`, RATE_LIMIT_AUTH_PER_MIN, 60_000)) {
+    socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   const token = url.searchParams.get("token") || "";
   const payload = verifyJwt(token);
   if (!payload) {
