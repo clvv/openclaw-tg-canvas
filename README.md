@@ -25,6 +25,63 @@ This package provides a Telegram Mini App that renders agent-generated HTML or m
    BOT_TOKEN=... MINIAPP_URL=https://xxxx.trycloudflare.com node scripts/setup-bot.js
    ```
 
+## HTTPS via nginx + Let’s Encrypt (domain-based, no Cloudflare)
+
+Use this if you already have a subdomain pointing at your VPS.
+
+**1) Nginx HTTP config (ACME + proxy):**
+
+```nginx
+server {
+  listen 80;
+  listen [::]:80;
+  server_name canvas.example.com;
+
+  location ^~ /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+    default_type text/plain;
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:3721;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+}
+```
+
+```bash
+sudo mkdir -p /var/www/certbot/.well-known/acme-challenge
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**2) Certbot (webroot):**
+
+```bash
+sudo certbot certonly --webroot -w /var/www/certbot -d canvas.example.com \
+  -m you@example.com --agree-tos --non-interactive
+```
+
+**3) Enable HTTPS + redirect (certbot can do this):**
+
+```bash
+sudo certbot --nginx -d canvas.example.com -m you@example.com --agree-tos --redirect --non-interactive
+```
+
+**4) Verify (IPv4/IPv6):**
+
+```bash
+curl -4 https://canvas.example.com/
+curl -6 https://canvas.example.com/
+```
+
+If IPv6 fails, add `listen [::]:80` / `listen [::]:443` or remove the AAAA record.
+
 ## Pushing Content from the Agent
 
 Use the CLI or the HTTP `/push` API (loopback-only):
