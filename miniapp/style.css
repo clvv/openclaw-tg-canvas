@@ -1,5 +1,5 @@
 :root {
-  /* Force a clean white canvas background for readability */
+  /* Light defaults */
   --tg-bg: #ffffff;
   --tg-text: #111111;
   --tg-hint: #7d7d7d;
@@ -7,6 +7,27 @@
   --tg-btn: #2481cc;
   --tg-btn-text: #ffffff;
   --tg-secondary-bg: #f2f2f2;
+}
+
+/* Prefer Telegram theme vars when available */
+:root[data-theme="light"] {
+  --tg-bg: var(--tg-theme-bg-color, #ffffff);
+  --tg-text: var(--tg-theme-text-color, #111111);
+  --tg-hint: var(--tg-theme-hint-color, #7d7d7d);
+  --tg-link: var(--tg-theme-link-color, #2481cc);
+  --tg-btn: var(--tg-theme-button-color, #2481cc);
+  --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
+  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f2f2f2);
+}
+
+:root[data-theme="dark"] {
+  --tg-bg: var(--tg-theme-bg-color, #0f0f10);
+  --tg-text: var(--tg-theme-text-color, #f3f4f6);
+  --tg-hint: var(--tg-theme-hint-color, #9aa0a6);
+  --tg-link: var(--tg-theme-link-color, #8ab4f8);
+  --tg-btn: var(--tg-theme-button-color, #2f81f7);
+  --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
+  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #1b1c1f);
 }
 
 * {
@@ -40,6 +61,13 @@ html, body {
   padding: 12px 16px 8px;
   background: var(--tg-bg);
   z-index: 5;
+  border-bottom: 1px solid var(--tg-secondary-bg);
+}
+
+.title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .title {
@@ -47,6 +75,27 @@ html, body {
   font-weight: 600;
   color: var(--tg-hint);
   letter-spacing: 0.2px;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--tg-hint);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--tg-secondary-bg);
+  color: var(--tg-hint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.conn-text {
+  font-weight: 600;
 }
 
 .conn-dot {
@@ -61,11 +110,20 @@ html, body {
   background: #27ae60; /* connected */
 }
 
+.conn-dot.connecting {
+  background: #f2c94c; /* connecting */
+}
+
 .content {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 12px 16px 20px;
+}
+
+.content-inner {
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 .fade-in {
@@ -78,7 +136,7 @@ html, body {
 }
 
 .center {
-  height: 100%;
+  min-height: 60vh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -87,6 +145,13 @@ html, body {
   color: var(--tg-hint);
   text-align: center;
   padding: 24px;
+}
+
+.empty-card {
+  border: 1px dashed var(--tg-secondary-bg);
+  border-radius: 14px;
+  padding: 18px 16px;
+  background: #fff;
 }
 
 .spinner {
@@ -110,6 +175,19 @@ html, body {
   color: var(--tg-btn-text);
   font-size: 14px;
   font-weight: 600;
+}
+
+@media (max-width: 420px) {
+  .topbar {
+    padding: 10px 12px 6px;
+  }
+  .status {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .content {
+    padding: 10px 12px 18px;
+  }
 }
 
 /* Markdown styles */

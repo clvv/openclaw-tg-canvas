@@ -3,6 +3,11 @@
 
 (() => {
   const tg = window.Telegram?.WebApp;
+  // Apply Telegram theme (light/dark)
+  try {
+    const theme = tg?.colorScheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  } catch (_) {}
 
   const contentEl = document.querySelector('.content-inner');
   const connDot = document.getElementById('connDot');
