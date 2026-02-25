@@ -11,12 +11,20 @@
   <body>
     <div id="app" class="app">
       <header class="topbar">
-        <div class="title">OpenClaw Canvas</div>
-        <div id="connDot" class="conn-dot" aria-label="Connection status"></div>
+        <div class="title-wrap">
+          <div class="title">OpenClaw Canvas</div>
+          <div id="lastUpdated" class="subtitle">Last updated —</div>
+        </div>
+        <div class="status" role="status" aria-live="polite">
+          <span id="connDot" class="conn-dot" aria-hidden="true"></span>
+          <span id="connText" class="conn-text">Connecting…</span>
+        </div>
       </header>
 
       <main id="content" class="content" role="main">
-        <!-- Dynamic content rendered here -->
+        <div class="content-inner">
+          <!-- Dynamic content rendered here -->
+        </div>
       </main>
     </div>
 

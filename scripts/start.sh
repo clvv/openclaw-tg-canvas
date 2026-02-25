@@ -9,6 +9,11 @@ if [[ -z "${ALLOWED_USER_IDS:-}" ]]; then
   echo "Missing ALLOWED_USER_IDS" >&2
   exit 1
 fi
+if [[ -z "${PUSH_TOKEN:-}" ]]; then
+  echo "Missing PUSH_TOKEN — required when using cloudflared (loopback check alone is not sufficient)." >&2
+  echo "Generate one with: openssl rand -hex 32" >&2
+  exit 1
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"

@@ -21,9 +21,24 @@ const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString("he
 const JWT_TTL_SECONDS = parseInt(process.env.JWT_TTL_SECONDS || "900", 10); // 15m
 const INIT_DATA_MAX_AGE_SECONDS = parseInt(process.env.INIT_DATA_MAX_AGE_SECONDS || "300", 10); // 5m
 const PORT = parseInt(process.env.PORT || "3721", 10);
-const PUSH_TOKEN = process.env.PUSH_TOKEN || ""; // optional
+const PUSH_TOKEN = process.env.PUSH_TOKEN || ""; // required — server will refuse /push and /clear without it
 const RATE_LIMIT_AUTH_PER_MIN = parseInt(process.env.RATE_LIMIT_AUTH_PER_MIN || "30", 10);
 const RATE_LIMIT_STATE_PER_MIN = parseInt(process.env.RATE_LIMIT_STATE_PER_MIN || "120", 10);
+
+// ---- Startup validation ----
+// PUSH_TOKEN is required because cloudflared (and similar tunnels) forward
+// remote requests as loopback TCP connections, bypassing the IP-based loopback
+// check entirely. Without a PUSH_TOKEN, anyone who discovers the public tunnel
+// URL can call /push and /clear.
+if (!PUSH_TOKEN) {
+  console.error(
+    "[FATAL] PUSH_TOKEN is not set. Set PUSH_TOKEN to a strong random secret before starting the server.\n" +
+    "        The loopback-only check is NOT sufficient when using cloudflared or any other local tunnel,\n" +
+    "        because the tunnel connects to the server via localhost, making all remote requests appear\n" +
+    "        to originate from 127.0.0.1. PUSH_TOKEN is your only protection for /push and /clear."
+  );
+  process.exit(1);
+}
 
 // ---- Helpers ----
 const MINIAPP_DIR = path.join(__dirname, "miniapp");
@@ -313,20 +328,19 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // Push endpoint (loopback only)
+    // Push endpoint — PUSH_TOKEN required (loopback check retained as an additional layer
+    // but is NOT sufficient alone when cloudflared is in use; see startup validation above)
     if (req.method === "POST" && url.pathname === "/push") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) {
         return sendJson(res, 403, { error: "Forbidden" });
       }
-      if (PUSH_TOKEN) {
-        const headerToken = req.headers["x-push-token"] || "";
-        const auth = req.headers["authorization"] || "";
-        const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-        const queryToken = url.searchParams.get("token") || "";
-        const provided = headerToken || bearer || queryToken;
-        if (provided !== PUSH_TOKEN) {
-          return sendJson(res, 401, { error: "Invalid push token" });
-        }
+      const headerToken = req.headers["x-push-token"] || "";
+      const auth = req.headers["authorization"] || "";
+      const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      const queryToken = url.searchParams.get("token") || "";
+      const provided = headerToken || bearer || queryToken;
+      if (!provided || provided !== PUSH_TOKEN) {
+        return sendJson(res, 401, { error: "Invalid push token" });
       }
 
       const ip = req.socket.remoteAddress || 'unknown';
@@ -364,10 +378,18 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, clients });
     }
 
-    // Clear endpoint (loopback only)
+    // Clear endpoint — PUSH_TOKEN required (same rationale as /push)
     if (req.method === "POST" && url.pathname === "/clear") {
       if (!isLoopbackAddress(req.socket.remoteAddress)) {
         return sendJson(res, 403, { error: "Forbidden" });
+      }
+      const headerToken = req.headers["x-push-token"] || "";
+      const auth = req.headers["authorization"] || "";
+      const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      const queryToken = url.searchParams.get("token") || "";
+      const provided = headerToken || bearer || queryToken;
+      if (!provided || provided !== PUSH_TOKEN) {
+        return sendJson(res, 401, { error: "Invalid push token" });
       }
       currentState = null;
       broadcast({ type: "clear" });

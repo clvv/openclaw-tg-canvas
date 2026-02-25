@@ -10,7 +10,7 @@ metadata:
       "kind": "server",
       "requires": {
         "bins": ["node", "cloudflared"],
-        "env": ["BOT_TOKEN", "ALLOWED_USER_IDS", "JWT_SECRET", "MINIAPP_URL"]
+        "env": ["BOT_TOKEN", "ALLOWED_USER_IDS", "JWT_SECRET", "MINIAPP_URL", "PUSH_TOKEN"]
       },
       "install": [
         {
@@ -74,16 +74,16 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 | `POST /auth` | ✅ | Telegram `initData` HMAC-SHA256 verification + `ALLOWED_USER_IDS` check |
 | `GET /state` | ✅ | JWT required |
 | `GET /ws` | ✅ | JWT required (WebSocket upgrade) |
-| `POST /push` | ❌ loopback-only | Enforced at socket level (`127.0.0.1` / `::1` only); optional `PUSH_TOKEN` |
-| `POST /clear` | ❌ loopback-only | Same as above |
-| `GET /health` | ❌ loopback-only | Same as above |
+| `POST /push` | ❌ loopback-only | `PUSH_TOKEN` required + loopback check |
+| `POST /clear` | ❌ loopback-only | `PUSH_TOKEN` required + loopback check |
+| `GET /health` | ❌ loopback-only | Loopback check only (read-only, low risk) |
 
-**Loopback enforcement** for `/push`, `/clear`, and `/health` is done at the TCP socket level (`req.socket.remoteAddress`), not via headers — so it cannot be spoofed via `X-Forwarded-For` or similar.
+> ⚠️ **Cloudflared loopback bypass:** `cloudflared` (and other local tunnels) forward remote requests by making outbound TCP connections to `localhost`. This means all requests arriving via the tunnel appear to originate from `127.0.0.1` at the socket level — completely defeating the loopback-only IP check. **`PUSH_TOKEN` is therefore required and is enforced at startup.** The loopback check is retained as an additional layer but must not be relied on as the sole protection.
 
 **Recommendations:**
-- Set `PUSH_TOKEN` in your `.env` for defense-in-depth even though `/push` is already loopback-restricted.
+- **Set `PUSH_TOKEN`** — the server will refuse to start without it. Generate one with: `openssl rand -hex 32`
 - Use a strong random `JWT_SECRET` (32+ bytes).
-- Keep `BOT_TOKEN` and `JWT_SECRET` secret; rotate if compromised.
+- Keep `BOT_TOKEN`, `JWT_SECRET`, and `PUSH_TOKEN` secret; rotate if compromised.
 - The Cloudflare tunnel exposes the Mini App publicly — the `ALLOWED_USER_IDS` check in `/auth` is the primary access control gate for the canvas.
 
 ## Commands
@@ -101,5 +101,5 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 | `JWT_SECRET` | Yes | Secret used to sign session tokens. Use a long random value (32+ bytes). |
 | `PORT` | No | Server port (default: `3721`). |
 | `MINIAPP_URL` | Yes (for bot setup) | HTTPS URL of the Mini App (Cloudflare tunnel or nginx). |
-| `PUSH_TOKEN` | Recommended | Shared secret for `/push` and CLI. Sent via `X-Push-Token` header. |
+| `PUSH_TOKEN` | Yes | Shared secret for `/push` and `/clear`. Sent via `X-Push-Token` header. Required because `cloudflared` makes loopback TCP connections, bypassing IP-based loopback checks. Generate with: `openssl rand -hex 32` |
 | `TG_CANVAS_URL` | No | Base URL for the CLI (default: `http://127.0.0.1:3721`). |

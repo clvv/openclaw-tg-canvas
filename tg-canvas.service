@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenClaw Telegram Canvas Mini App
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/wdai/.openclaw/workspace/tg-canvas-miniapp
+EnvironmentFile=/home/wdai/.openclaw/workspace/tg-canvas-miniapp/.env
+ExecStart=/usr/bin/node /home/wdai/.openclaw/workspace/tg-canvas-miniapp/server.js
+Restart=always
+RestartSec=2
+StandardOutput=append:/home/wdai/.openclaw/workspace/tg-canvas-miniapp/logs/server.log
+StandardError=append:/home/wdai/.openclaw/workspace/tg-canvas-miniapp/logs/server.log
+
+[Install]
+WantedBy=default.target
