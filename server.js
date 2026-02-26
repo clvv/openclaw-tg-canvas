@@ -7,6 +7,7 @@
 
 const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
@@ -575,14 +576,31 @@ termWss.on("connection", (ws, req, payload) => {
   const cols = 80;
   const rows = 24;
 
+  // Use the actual process user's info — guards against the service being
+  // accidentally run as root, which would give the terminal a root shell.
+  const userInfo = (() => { try { return os.userInfo(); } catch (_) { return null; } })();
+  const userHome = userInfo?.homedir || process.env.HOME || "/";
+  const userName = userInfo?.username || process.env.USER || "";
+
+  if (process.getuid && process.getuid() === 0) {
+    console.warn("[tg-canvas] WARNING: server is running as root; terminal will be a root shell. " +
+      "Set User=wdai in the systemd service to fix this.");
+  }
+
   let term;
   try {
     term = pty.spawn(shell, [], {
       name: "xterm-256color",
       cols,
       rows,
-      cwd: process.env.HOME || "/",
-      env: { ...process.env, TERM: "xterm-256color" },
+      cwd: userHome,
+      env: {
+        ...process.env,
+        HOME: userHome,
+        USER: userName,
+        LOGNAME: userName,
+        TERM: "xterm-256color",
+      },
     });
   } catch (err) {
     ws.send(JSON.stringify({ type: "exit", code: -1, error: String(err) }));

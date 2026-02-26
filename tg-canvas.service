@@ -4,6 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
+User=wdai
+Group=wdai
 WorkingDirectory=/home/wdai/.openclaw/workspace/tg-canvas-miniapp
 EnvironmentFile=/home/wdai/.openclaw/workspace/tg-canvas-miniapp/.env
 ExecStart=/usr/bin/node /home/wdai/.openclaw/workspace/tg-canvas-miniapp/server.js
