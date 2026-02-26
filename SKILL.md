@@ -98,15 +98,11 @@ The server can optionally proxy `/oc/*` to a local OpenClaw gateway, enabling yo
 ENABLE_OPENCLAW_PROXY=true
 ```
 
-**Declared side-effects when enabled:**
-- Reads `~/.openclaw/openclaw.json` to auto-load the gateway auth token (if `OPENCLAW_GATEWAY_TOKEN` is not set explicitly). This file contains your local OpenClaw gateway credentials.
-- Injects the gateway auth token into proxied requests as an `Authorization: Bearer` header.
-- Adds the Mini App origin to the gateway's allowed control-UI origins (must be done manually — see below).
+**When enabled, the server:**
+- Proxies `/oc/*` HTTP and WebSocket requests to the local OpenClaw gateway.
+- If `OPENCLAW_GATEWAY_TOKEN` is set, injects it as `Authorization: Bearer` on proxied requests.
 
-To provide the token explicitly without file access:
-```env
-OPENCLAW_GATEWAY_TOKEN=your-gateway-token
-```
+The server does **not** read any local files for credentials — `OPENCLAW_GATEWAY_TOKEN` must be supplied explicitly via environment variable if needed.
 
 When using `/oc/*` over a public origin, add that origin to OpenClaw gateway config:
 
@@ -137,7 +133,7 @@ When using `/oc/*` over a public origin, add that origin to OpenClaw gateway con
 | `MINIAPP_URL` | Yes (for bot setup) | HTTPS URL of the Mini App (Cloudflare tunnel or nginx). |
 | `PUSH_TOKEN` | Yes | Shared secret for `/push` and `/clear`. Sent via `X-Push-Token` header. Required because `cloudflared` makes loopback TCP connections, bypassing IP-based loopback checks. Generate with: `openssl rand -hex 32` |
 | `ENABLE_OPENCLAW_PROXY` | No | Set to `"true"` to enable Control UI proxy at `/oc/*`. **Off by default.** When enabled, the server reads `~/.openclaw/openclaw.json` for a gateway auth token if `OPENCLAW_GATEWAY_TOKEN` is not set. |
-| `OPENCLAW_GATEWAY_TOKEN` | No (proxy only) | Gateway auth token for the proxied OpenClaw instance. If unset and proxy is enabled, auto-loaded from `~/.openclaw/openclaw.json`. |
+| `OPENCLAW_GATEWAY_TOKEN` | No (proxy only) | Gateway auth token injected into proxied `/oc/*` requests. Must be set explicitly; the server does not read local credential files. |
 | `OPENCLAW_PROXY_HOST` | No | Hostname of the local OpenClaw gateway (default: `127.0.0.1`). |
 | `OPENCLAW_PROXY_PORT` | No | Port of the local OpenClaw gateway (default: `18789`). |
 | `TG_CANVAS_URL` | No | Base URL for the CLI (default: `http://127.0.0.1:3721`). |

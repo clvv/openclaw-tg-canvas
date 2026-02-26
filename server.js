@@ -50,22 +50,8 @@ if (!PUSH_TOKEN) {
   process.exit(1);
 }
 
-// Auto-load gateway token ONLY when proxy is explicitly enabled.
-// Declared side-effect: reads ~/.openclaw/openclaw.json to obtain the gateway auth token.
-if (ENABLE_OPENCLAW_PROXY && !OPENCLAW_GATEWAY_TOKEN) {
-  try {
-    const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-    OPENCLAW_GATEWAY_TOKEN = cfg?.gateway?.auth?.token || '';
-    if (OPENCLAW_GATEWAY_TOKEN) {
-      console.log('[tg-canvas] OPENCLAW_PROXY: gateway token loaded from ~/.openclaw/openclaw.json');
-    }
-  } catch (_) {
-    // ignore — token stays empty, proxy will work without auth if gateway allows it
-  }
-}
 if (ENABLE_OPENCLAW_PROXY) {
-  console.log(`[tg-canvas] OPENCLAW_PROXY enabled (token: ${OPENCLAW_GATEWAY_TOKEN ? 'set' : 'not set'})`);
+  console.log(`[tg-canvas] OPENCLAW_PROXY enabled (OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN ? 'set' : 'not set'})`);
 } else {
   console.log('[tg-canvas] OPENCLAW_PROXY disabled (set ENABLE_OPENCLAW_PROXY=true to enable)');
 }
