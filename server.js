@@ -49,7 +49,7 @@ if (!PUSH_TOKEN) {
 // Best effort: auto-load gateway auth token so proxied control-ui WS can authenticate.
 if (!OPENCLAW_GATEWAY_TOKEN) {
   try {
-    const cfgPath = '/home/wdai/.openclaw/openclaw.json';
+    const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
     OPENCLAW_GATEWAY_TOKEN = cfg?.gateway?.auth?.token || '';
   } catch (_) {
@@ -584,7 +584,7 @@ termWss.on("connection", (ws, req, payload) => {
 
   if (process.getuid && process.getuid() === 0) {
     console.warn("[tg-canvas] WARNING: server is running as root; terminal will be a root shell. " +
-      "Set User=wdai in the systemd service to fix this.");
+      "Set User=<your-user> in the systemd service to fix this.");
   }
 
   let term;

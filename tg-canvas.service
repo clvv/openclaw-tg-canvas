@@ -1,18 +1,25 @@
+# tg-canvas.service — copy to /etc/systemd/system/ and edit the placeholders
+# Then: sudo systemctl daemon-reload && sudo systemctl enable --now tg-canvas
+#
+# Replace:
+#   YOUR_USER        → the system user that should run the server (e.g. wdai, ubuntu, pi)
+#   YOUR_INSTALL_DIR → absolute path to the tg-canvas-miniapp directory
+
 [Unit]
 Description=OpenClaw Telegram Canvas Mini App
 After=network.target
 
 [Service]
 Type=simple
-User=wdai
-Group=wdai
-WorkingDirectory=/home/wdai/.openclaw/workspace/tg-canvas-miniapp
-EnvironmentFile=/home/wdai/.openclaw/workspace/tg-canvas-miniapp/.env
-ExecStart=/usr/bin/node /home/wdai/.openclaw/workspace/tg-canvas-miniapp/server.js
+User=YOUR_USER
+Group=YOUR_USER
+WorkingDirectory=YOUR_INSTALL_DIR
+EnvironmentFile=YOUR_INSTALL_DIR/.env
+ExecStart=/usr/bin/node YOUR_INSTALL_DIR/server.js
 Restart=always
 RestartSec=2
-StandardOutput=append:/home/wdai/.openclaw/workspace/tg-canvas-miniapp/logs/server.log
-StandardError=append:/home/wdai/.openclaw/workspace/tg-canvas-miniapp/logs/server.log
+StandardOutput=append:YOUR_INSTALL_DIR/logs/server.log
+StandardError=append:YOUR_INSTALL_DIR/logs/server.log
 
 [Install]
 WantedBy=default.target

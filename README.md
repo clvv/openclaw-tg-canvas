@@ -50,7 +50,7 @@ This package provides a Telegram Mini App that renders agent-generated HTML or m
 - `PUSH_TOKEN` is mandatory (server refuses startup without it).
 - Use a strong random `JWT_SECRET` (32+ bytes).
 - Keep `BOT_TOKEN`, `JWT_SECRET`, `PUSH_TOKEN`, and gateway token secret.
-- If using Control UI through `/oc/*`, add Mini App origin(s) to `gateway.controlUi.allowedOrigins` (e.g. `https://canvas.wdai.us`).
+- If using Control UI through `/oc/*`, add Mini App origin(s) to `gateway.controlUi.allowedOrigins` (e.g. `https://your-canvas-url.example.com`).
 
 ## HTTPS via nginx + Let's Encrypt (domain-based, no Cloudflare)
 
@@ -130,7 +130,7 @@ For proxied Control UI websocket to be accepted, configure OpenClaw:
 {
   "gateway": {
     "controlUi": {
-      "allowedOrigins": ["https://canvas.wdai.us"]
+      "allowedOrigins": ["https://your-canvas-url.example.com"]
     }
   }
 }

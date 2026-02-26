@@ -95,7 +95,7 @@ When using `/oc/*` over a public origin, add that origin to OpenClaw gateway con
 {
   "gateway": {
     "controlUi": {
-      "allowedOrigins": ["https://canvas.wdai.us"]
+      "allowedOrigins": ["https://your-canvas-url.example.com"]
     }
   }
 }
