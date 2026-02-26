@@ -269,10 +269,16 @@
       return;
     }
 
+    // Compute font size: target ~72 cols on the current device.
+    // 72 cols fits most terminal output; floor at 10px (20 physical px on retina).
+    // charWidthRatio ≈ 0.6 for typical monospace fonts in xterm.js.
+    const _paneW = (pane.offsetWidth || window.innerWidth) - 8;
+    const _fontSize = Math.max(10, Math.min(14, Math.round(_paneW / 72 / 0.6)));
+
     // Init xterm
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: _fontSize,
       fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
       theme: {
         background: '#0d1117',
