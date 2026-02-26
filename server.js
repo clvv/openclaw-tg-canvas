@@ -24,6 +24,10 @@ const PORT = parseInt(process.env.PORT || "3721", 10);
 const PUSH_TOKEN = process.env.PUSH_TOKEN || ""; // required — server will refuse /push and /clear without it
 const RATE_LIMIT_AUTH_PER_MIN = parseInt(process.env.RATE_LIMIT_AUTH_PER_MIN || "30", 10);
 const RATE_LIMIT_STATE_PER_MIN = parseInt(process.env.RATE_LIMIT_STATE_PER_MIN || "120", 10);
+const ENABLE_OPENCLAW_PROXY = (process.env.ENABLE_OPENCLAW_PROXY || "true") === "true";
+const OPENCLAW_PROXY_HOST = process.env.OPENCLAW_PROXY_HOST || "127.0.0.1";
+const OPENCLAW_PROXY_PORT = parseInt(process.env.OPENCLAW_PROXY_PORT || "18789", 10);
+let OPENCLAW_GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "";
 
 // ---- Startup validation ----
 // PUSH_TOKEN is required because cloudflared (and similar tunnels) forward
@@ -39,6 +43,18 @@ if (!PUSH_TOKEN) {
   );
   process.exit(1);
 }
+
+// Best effort: auto-load gateway auth token so proxied control-ui WS can authenticate.
+if (!OPENCLAW_GATEWAY_TOKEN) {
+  try {
+    const cfgPath = '/home/wdai/.openclaw/openclaw.json';
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    OPENCLAW_GATEWAY_TOKEN = cfg?.gateway?.auth?.token || '';
+  } catch (_) {
+    // ignore
+  }
+}
+console.log(`[tg-canvas] OPENCLAW_PROXY token loaded: ${OPENCLAW_GATEWAY_TOKEN ? 'yes' : 'no'}`);
 
 // ---- Helpers ----
 const MINIAPP_DIR = path.join(__dirname, "miniapp");
@@ -213,6 +229,97 @@ function serveFile(res, filePath) {
   });
 }
 
+function parseCookies(req) {
+  const raw = req.headers.cookie || "";
+  const out = {};
+  raw.split(";").forEach((part) => {
+    const i = part.indexOf("=");
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  });
+  return out;
+}
+
+function getJwtFromRequest(req, urlObj) {
+  const auth = req.headers["authorization"] || "";
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const queryToken = urlObj.searchParams.get("token") || "";
+  const cookieToken = parseCookies(req).oc_jwt || "";
+  return bearer || queryToken || cookieToken;
+}
+
+function patchControlCsp(headersIn) {
+  const headers = { ...headersIn };
+  const cspKey = Object.keys(headers).find((k) => k.toLowerCase() === 'content-security-policy');
+  if (!cspKey) return headers;
+
+  let csp = String(headers[cspKey] || '');
+  // Allow Google Fonts used by control-ui styles without broadly opening script sources.
+  if (/style-src\s/.test(csp) && !/fonts\.googleapis\.com/.test(csp)) {
+    csp = csp.replace(/style-src\s+([^;]+)/, (m, p1) => `style-src ${p1} https://fonts.googleapis.com`);
+  }
+  if (/font-src\s/.test(csp)) {
+    if (!/fonts\.gstatic\.com/.test(csp)) {
+      csp = csp.replace(/font-src\s+([^;]+)/, (m, p1) => `font-src ${p1} https://fonts.gstatic.com data:`);
+    }
+  } else {
+    csp += '; font-src \"self\" https://fonts.gstatic.com data:';
+  }
+  headers[cspKey] = csp;
+  return headers;
+}
+
+function proxyToOpenClaw(req, res, targetPath) {
+  const headers = { ...req.headers };
+  delete headers.host;
+  if (OPENCLAW_GATEWAY_TOKEN) {
+    headers.authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+  }
+
+  const proxyReq = http.request(
+    {
+      host: OPENCLAW_PROXY_HOST,
+      port: OPENCLAW_PROXY_PORT,
+      method: req.method,
+      path: targetPath,
+      headers,
+    },
+    (proxyRes) => {
+      const isConfig = targetPath.startsWith('/__openclaw/control-ui-config.json');
+      if (!isConfig) {
+        const patchedHeaders = patchControlCsp(proxyRes.headers);
+        res.writeHead(proxyRes.statusCode || 502, patchedHeaders);
+        proxyRes.pipe(res);
+        return;
+      }
+
+      let buf = '';
+      proxyRes.setEncoding('utf8');
+      proxyRes.on('data', (d) => (buf += d));
+      proxyRes.on('end', () => {
+        try {
+          const j = JSON.parse(buf || '{}');
+          const host = req.headers.host || '';
+          const scheme = /localhost|127\.0\.0\.1/.test(host) ? 'ws' : 'wss';
+          j.gatewayUrl = `${scheme}://${host}`;
+          const out = JSON.stringify(j);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(out) });
+          res.end(out);
+        } catch {
+          res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+          res.end(buf);
+        }
+      });
+    }
+  );
+
+  proxyReq.on("error", (err) => {
+    console.error("OpenClaw proxy error:", err.message);
+    sendJson(res, 502, { error: "OpenClaw proxy unavailable" });
+  });
+
+  req.pipe(proxyReq);
+}
+
 // ---- Simple in-memory rate limiter ----
 const rateLimitBuckets = new Map();
 function rateLimit(key, limit, windowMs) {
@@ -266,6 +373,58 @@ function broadcast(obj) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
+
+    // Auth-gated proxy to local OpenClaw control UI.
+    // Expose via /oc/* through tg-canvas only (JWT required).
+    if (ENABLE_OPENCLAW_PROXY && url.pathname.startsWith("/oc/")) {
+      const ip = req.socket.remoteAddress || "unknown";
+      if (!rateLimit(`oc:${ip}`, RATE_LIMIT_STATE_PER_MIN, 60_000)) {
+        return sendJson(res, 429, { error: "Rate limit" });
+      }
+
+      // Bootstrap cookie session from one-time token in URL.
+      const queryToken = url.searchParams.get("token") || "";
+      if (queryToken) {
+        const qp = verifyJwt(queryToken);
+        if (!qp) return sendJson(res, 401, { error: "Invalid token" });
+        res.writeHead(302, {
+          "Set-Cookie": `oc_jwt=${encodeURIComponent(queryToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${JWT_TTL_SECONDS}`,
+          "Location": "/oc/",
+        });
+        return res.end();
+      }
+
+      const token = getJwtFromRequest(req, url);
+      const payload = verifyJwt(token);
+      if (!payload) return sendJson(res, 401, { error: "Invalid token" });
+
+      // Do not forward auth token query params to the upstream control UI.
+      url.searchParams.delete("token");
+      const qs = url.searchParams.toString();
+      const targetPath = url.pathname.replace(/^\/oc/, "") + (qs ? `?${qs}` : "");
+      return proxyToOpenClaw(req, res, targetPath);
+    }
+
+    // Support absolute control-ui asset/API paths that may be requested from /oc/ pages.
+    // Only proxy when request originated from /oc/ and auth token is valid.
+    if (ENABLE_OPENCLAW_PROXY) {
+      const ocLikePath =
+        url.pathname.startsWith('/assets/') ||
+        url.pathname === '/favicon.svg' ||
+        url.pathname === '/favicon-32.png' ||
+        url.pathname === '/apple-touch-icon.png' ||
+        url.pathname.startsWith('/api/') ||
+        url.pathname.startsWith('/__openclaw/');
+      const referer = req.headers.referer || '';
+      if (ocLikePath && referer.includes('/oc/')) {
+        const token = getJwtFromRequest(req, url);
+        const payload = verifyJwt(token);
+        if (!payload) return sendJson(res, 401, { error: 'Invalid token' });
+        const qs = url.searchParams.toString();
+        const targetPath = url.pathname + (qs ? `?${qs}` : '');
+        return proxyToOpenClaw(req, res, targetPath);
+      }
+    }
 
     // Serve index
     if (req.method === "GET" && url.pathname === "/") {
@@ -433,6 +592,103 @@ wss.on("connection", (ws, req, payload) => {
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  // Auth-gated WS passthrough to local OpenClaw under /oc/*
+  if (ENABLE_OPENCLAW_PROXY && url.pathname.startsWith("/oc/")) {
+    const token = getJwtFromRequest(req, url);
+    const payload = verifyJwt(token);
+    if (!payload) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    const targetPath = url.pathname.replace(/^\/oc/, "") + (url.search || "");
+    const wsHeaders = { ...req.headers };
+    if (OPENCLAW_GATEWAY_TOKEN) wsHeaders.authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+    const proxyReq = http.request({
+      host: OPENCLAW_PROXY_HOST,
+      port: OPENCLAW_PROXY_PORT,
+      method: "GET",
+      path: targetPath,
+      headers: wsHeaders,
+    });
+
+    proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
+      // forward 101 response
+      socket.write("HTTP/1.1 101 Switching Protocols\r\n");
+      for (const [k, v] of Object.entries(proxyRes.headers)) {
+        socket.write(`${k}: ${v}\r\n`);
+      }
+      socket.write("\r\n");
+
+      if (proxyHead && proxyHead.length) socket.write(proxyHead);
+      if (head && head.length) proxySocket.write(head);
+
+      proxySocket.pipe(socket).pipe(proxySocket);
+    });
+
+    proxyReq.on("response", (r) => {
+      // Upstream rejected WS upgrade (e.g., 401). Return a concrete status instead of generic 502.
+      socket.write(`HTTP/1.1 ${r.statusCode || 502} Upstream Rejected\r\nConnection: close\r\n\r\n`);
+      socket.destroy();
+    });
+
+    proxyReq.on("error", (err) => {
+      console.error('[tg-canvas] ws /oc proxy error:', err.message);
+      socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+      socket.destroy();
+    });
+
+    proxyReq.end();
+    return;
+  }
+
+  // Some control-ui bundles may open absolute websocket endpoints.
+  // Proxy /ws and / (gateway default) for control sessions only (oc_jwt cookie present).
+  const hasOcSession = !!parseCookies(req).oc_jwt;
+  if (ENABLE_OPENCLAW_PROXY && (url.pathname === '/ws' || url.pathname === '/') && hasOcSession) {
+    const token = getJwtFromRequest(req, url);
+    const payload = verifyJwt(token);
+    if (!payload) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    const wsHeaders = { ...req.headers };
+    if (OPENCLAW_GATEWAY_TOKEN) wsHeaders.authorization = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+    const proxyReq = http.request({
+      host: OPENCLAW_PROXY_HOST,
+      port: OPENCLAW_PROXY_PORT,
+      method: "GET",
+      path: url.pathname + (url.search || ''),
+      headers: wsHeaders,
+    });
+
+    proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
+      socket.write("HTTP/1.1 101 Switching Protocols\r\n");
+      for (const [k, v] of Object.entries(proxyRes.headers)) socket.write(`${k}: ${v}\r\n`);
+      socket.write("\r\n");
+      if (proxyHead && proxyHead.length) socket.write(proxyHead);
+      if (head && head.length) proxySocket.write(head);
+      proxySocket.pipe(socket).pipe(proxySocket);
+    });
+
+    proxyReq.on('response', (r) => {
+      socket.write(`HTTP/1.1 ${r.statusCode || 502} Upstream Rejected\r\nConnection: close\r\n\r\n`);
+      socket.destroy();
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('[tg-canvas] ws root proxy error:', err.message);
+      socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+      socket.destroy();
+    });
+    proxyReq.end();
+    return;
+  }
+
   if (url.pathname !== "/ws") {
     socket.destroy();
     return;

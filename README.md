@@ -39,16 +39,18 @@ This package provides a Telegram Mini App that renders agent-generated HTML or m
 | `POST /auth` | ✅ | Telegram `initData` HMAC-SHA256 + `ALLOWED_USER_IDS` check |
 | `GET /state` | ✅ | JWT required |
 | `GET /ws` | ✅ | JWT required (WebSocket upgrade) |
-| `POST /push` | ❌ loopback-only | Enforced at socket level; optional `PUSH_TOKEN` for defense-in-depth |
-| `POST /clear` | ❌ loopback-only | Same as above |
-| `GET /health` | ❌ loopback-only | Same as above |
+| `POST /push` | ❌ not public-safe by IP alone | **`PUSH_TOKEN` required** + loopback check |
+| `POST /clear` | ❌ not public-safe by IP alone | **`PUSH_TOKEN` required** + loopback check |
+| `GET /health` | ❌ loopback-only | Loopback check |
+| `GET/WS /oc/*` | ✅ | JWT required (tg-canvas auth) + server-side gateway proxy auth |
 
-Loopback enforcement for `/push`, `/clear`, and `/health` is done at the TCP socket level (`req.socket.remoteAddress`), not via headers — it cannot be spoofed via `X-Forwarded-For`.
+> ⚠️ Tunnel note: when using cloudflared, remote requests reach the app through a local TCP connection and can appear as loopback. Do **not** rely on loopback IP checks alone for privileged endpoints.
 
 **Recommendations:**
-- Set `PUSH_TOKEN` even though `/push` is already loopback-restricted (defense-in-depth).
+- `PUSH_TOKEN` is mandatory (server refuses startup without it).
 - Use a strong random `JWT_SECRET` (32+ bytes).
-- The Cloudflare tunnel exposes the Mini App publicly — `ALLOWED_USER_IDS` is the primary access control gate.
+- Keep `BOT_TOKEN`, `JWT_SECRET`, `PUSH_TOKEN`, and gateway token secret.
+- If using Control UI through `/oc/*`, add Mini App origin(s) to `gateway.controlUi.allowedOrigins` (e.g. `https://canvas.wdai.us`).
 
 ## HTTPS via nginx + Let's Encrypt (domain-based, no Cloudflare)
 
@@ -106,6 +108,33 @@ curl -6 https://canvas.example.com/
 ```
 
 If IPv6 fails, add `listen [::]:80` / `listen [::]:443` or remove the AAAA record.
+
+## OpenClaw Control UI via tg-canvas (auth-gated)
+
+This skill can proxy OpenClaw Control UI through the Mini App under `/oc/*`.
+
+- Entry URL: `/oc/?token=<tg-canvas-jwt>` (bootstrap), then cookie-backed session.
+- Assets/API/WS are proxied through tg-canvas and remain gated by tg-canvas auth.
+- Upstream gateway auth is injected server-side (never exposed to browser JS).
+
+Environment flags:
+
+- `ENABLE_OPENCLAW_PROXY=true` (default)
+- `OPENCLAW_PROXY_HOST=127.0.0.1` (default)
+- `OPENCLAW_PROXY_PORT=18789` (default)
+- Optional `OPENCLAW_GATEWAY_TOKEN` (otherwise auto-loaded from `~/.openclaw/openclaw.json`)
+
+For proxied Control UI websocket to be accepted, configure OpenClaw:
+
+```json
+{
+  "gateway": {
+    "controlUi": {
+      "allowedOrigins": ["https://canvas.wdai.us"]
+    }
+  }
+}
+```
 
 ## Pushing Content from the Agent
 

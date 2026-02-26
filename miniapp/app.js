@@ -13,6 +13,8 @@
   const connDot = document.getElementById('connDot');
   const connText = document.getElementById('connText');
   const lastUpdatedEl = document.getElementById('lastUpdated');
+  const openControlBtn = document.getElementById('openControlBtn');
+  let openingControl = false;
 
   let jwt = null;
   let ws = null;
@@ -31,6 +33,22 @@
       connText.textContent = state === 'reconnecting' ? 'Reconnecting…' : 'Connecting…';
     } else {
       connText.textContent = 'Offline';
+    }
+  }
+
+  function setControlButtonLoading(isLoading) {
+    if (!openControlBtn) return;
+    if (isLoading) {
+      openControlBtn.disabled = true;
+      openControlBtn.dataset.prevText = openControlBtn.textContent || 'Control';
+      openControlBtn.textContent = 'Opening…';
+      openControlBtn.style.opacity = '0.75';
+      openControlBtn.style.cursor = 'wait';
+    } else {
+      openControlBtn.disabled = false;
+      openControlBtn.textContent = openControlBtn.dataset.prevText || 'Control';
+      openControlBtn.style.opacity = '';
+      openControlBtn.style.cursor = '';
     }
   }
 
@@ -259,6 +277,23 @@
       const data = await res.json();
       if (!data?.token) throw new Error('no_token');
       jwt = data.token;
+
+      if (openControlBtn) {
+        openControlBtn.onclick = () => {
+          if (openingControl) return;
+          openingControl = true;
+          setControlButtonLoading(true);
+          setStatus('connecting');
+          connText.textContent = 'Opening control…';
+
+          // Open control inline in the same Mini App WebView.
+          setTimeout(() => {
+            const url = `/oc/?token=${encodeURIComponent(jwt)}`;
+            window.location.assign(url);
+          }, 80);
+        };
+      }
+
       return true;
     } catch (e) {
       return false;

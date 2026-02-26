@@ -77,6 +77,7 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 | `POST /push` | ❌ loopback-only | `PUSH_TOKEN` required + loopback check |
 | `POST /clear` | ❌ loopback-only | `PUSH_TOKEN` required + loopback check |
 | `GET /health` | ❌ loopback-only | Loopback check only (read-only, low risk) |
+| `GET/WS /oc/*` | ✅ | JWT required (from `/auth`), then cookie-backed session; upstream gateway auth injected server-side |
 
 > ⚠️ **Cloudflared loopback bypass:** `cloudflared` (and other local tunnels) forward remote requests by making outbound TCP connections to `localhost`. This means all requests arriving via the tunnel appear to originate from `127.0.0.1` at the socket level — completely defeating the loopback-only IP check. **`PUSH_TOKEN` is therefore required and is enforced at startup.** The loopback check is retained as an additional layer but must not be relied on as the sole protection.
 
@@ -85,6 +86,20 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 - Use a strong random `JWT_SECRET` (32+ bytes).
 - Keep `BOT_TOKEN`, `JWT_SECRET`, and `PUSH_TOKEN` secret; rotate if compromised.
 - The Cloudflare tunnel exposes the Mini App publicly — the `ALLOWED_USER_IDS` check in `/auth` is the primary access control gate for the canvas.
+
+### Control UI origin allowlist (required for websocket)
+
+When using `/oc/*` over a public origin, add that origin to OpenClaw gateway config:
+
+```json
+{
+  "gateway": {
+    "controlUi": {
+      "allowedOrigins": ["https://canvas.wdai.us"]
+    }
+  }
+}
+```
 
 ## Commands
 
@@ -103,3 +118,7 @@ Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Teleg
 | `MINIAPP_URL` | Yes (for bot setup) | HTTPS URL of the Mini App (Cloudflare tunnel or nginx). |
 | `PUSH_TOKEN` | Yes | Shared secret for `/push` and `/clear`. Sent via `X-Push-Token` header. Required because `cloudflared` makes loopback TCP connections, bypassing IP-based loopback checks. Generate with: `openssl rand -hex 32` |
 | `TG_CANVAS_URL` | No | Base URL for the CLI (default: `http://127.0.0.1:3721`). |
+| `ENABLE_OPENCLAW_PROXY` | No | Enable `/oc/*` proxy to local OpenClaw control UI (default: `true`). |
+| `OPENCLAW_PROXY_HOST` | No | Upstream OpenClaw host for `/oc/*` (default: `127.0.0.1`). |
+| `OPENCLAW_PROXY_PORT` | No | Upstream OpenClaw port for `/oc/*` (default: `18789`). |
+| `OPENCLAW_GATEWAY_TOKEN` | No | Optional explicit gateway token for proxied control UI requests; if unset, server loads from `~/.openclaw/openclaw.json`. |
