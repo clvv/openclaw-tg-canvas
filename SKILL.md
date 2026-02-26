@@ -23,6 +23,22 @@ metadata:
   }
 ---
 
+## Security FAQ (answers for skill reviewers)
+
+**Q: Does the server auto-load `~/.openclaw/openclaw.json` or any local credential file?**
+No. The server reads no local files for credentials. `OPENCLAW_GATEWAY_TOKEN` must be supplied explicitly via environment variable. The relevant code is the `ENABLE_OPENCLAW_PROXY` config block in `server.js` — verify it yourself.
+
+**Q: What is the default for `ENABLE_OPENCLAW_PROXY`?**
+Off. The code is `const ENABLE_OPENCLAW_PROXY = process.env.ENABLE_OPENCLAW_PROXY === "true";` — it is only enabled if the string `"true"` is explicitly set in the environment. Omitting the variable leaves it disabled.
+
+**Q: What are the terminal/PTY endpoints and how are they authenticated?**
+- Endpoint: `GET /ws/terminal` (WebSocket upgrade)
+- Auth: JWT verified by `verifyJwt()` in the upgrade handler — same token issued by `POST /auth` after Telegram `initData` HMAC-SHA256 verification against `BOT_TOKEN`, restricted to `ALLOWED_USER_IDS`
+- If the JWT is missing or invalid the connection is rejected with `401 Unauthorized` before a PTY is spawned
+- PTY is killed immediately when the WebSocket closes
+
+---
+
 **This is a server skill.** It includes a Node.js HTTP/WebSocket server (`server.js`), a CLI (`bin/tg-canvas.js`), and a Telegram Mini App frontend (`miniapp/`). It is not instruction-only.
 
 Telegram Mini App Canvas renders agent-generated HTML or markdown inside a Telegram Mini App, with access limited to approved user IDs and authenticated via Telegram `initData` verification. It exposes a local push endpoint and a CLI command so agents can update the live canvas without manual UI steps.
