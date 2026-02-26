@@ -26,7 +26,11 @@ const PORT = parseInt(process.env.PORT || "3721", 10);
 const PUSH_TOKEN = process.env.PUSH_TOKEN || ""; // required — server will refuse /push and /clear without it
 const RATE_LIMIT_AUTH_PER_MIN = parseInt(process.env.RATE_LIMIT_AUTH_PER_MIN || "30", 10);
 const RATE_LIMIT_STATE_PER_MIN = parseInt(process.env.RATE_LIMIT_STATE_PER_MIN || "120", 10);
-const ENABLE_OPENCLAW_PROXY = (process.env.ENABLE_OPENCLAW_PROXY || "true") === "true";
+// OpenClaw Control UI proxy — OFF by default; must be explicitly enabled.
+// When enabled, /oc/* is proxied to the local OpenClaw gateway, and the server
+// will attempt to read a gateway auth token from ~/.openclaw/openclaw.json if
+// OPENCLAW_GATEWAY_TOKEN is not set. Enable only if you trust the Mini App origin.
+const ENABLE_OPENCLAW_PROXY = process.env.ENABLE_OPENCLAW_PROXY === "true";
 const OPENCLAW_PROXY_HOST = process.env.OPENCLAW_PROXY_HOST || "127.0.0.1";
 const OPENCLAW_PROXY_PORT = parseInt(process.env.OPENCLAW_PROXY_PORT || "18789", 10);
 let OPENCLAW_GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || "";
@@ -46,17 +50,25 @@ if (!PUSH_TOKEN) {
   process.exit(1);
 }
 
-// Best effort: auto-load gateway auth token so proxied control-ui WS can authenticate.
-if (!OPENCLAW_GATEWAY_TOKEN) {
+// Auto-load gateway token ONLY when proxy is explicitly enabled.
+// Declared side-effect: reads ~/.openclaw/openclaw.json to obtain the gateway auth token.
+if (ENABLE_OPENCLAW_PROXY && !OPENCLAW_GATEWAY_TOKEN) {
   try {
     const cfgPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
     OPENCLAW_GATEWAY_TOKEN = cfg?.gateway?.auth?.token || '';
+    if (OPENCLAW_GATEWAY_TOKEN) {
+      console.log('[tg-canvas] OPENCLAW_PROXY: gateway token loaded from ~/.openclaw/openclaw.json');
+    }
   } catch (_) {
-    // ignore
+    // ignore — token stays empty, proxy will work without auth if gateway allows it
   }
 }
-console.log(`[tg-canvas] OPENCLAW_PROXY token loaded: ${OPENCLAW_GATEWAY_TOKEN ? 'yes' : 'no'}`);
+if (ENABLE_OPENCLAW_PROXY) {
+  console.log(`[tg-canvas] OPENCLAW_PROXY enabled (token: ${OPENCLAW_GATEWAY_TOKEN ? 'set' : 'not set'})`);
+} else {
+  console.log('[tg-canvas] OPENCLAW_PROXY disabled (set ENABLE_OPENCLAW_PROXY=true to enable)');
+}
 
 // ---- Helpers ----
 const MINIAPP_DIR = path.join(__dirname, "miniapp");
