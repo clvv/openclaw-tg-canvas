@@ -250,7 +250,40 @@
     });
   }
 
-  async function initTerminal() {
+  function showTerminalLaunchScreen() {
+    // Switch layout: hide canvas content, show terminal pane with launch button
+    document.getElementById('content').style.display = 'none';
+    document.querySelector('.topbar').style.display = 'none';
+    const pane = document.getElementById('terminal-pane');
+    pane.style.display = 'flex';
+
+    const containerEl = document.getElementById('terminal-container');
+    containerEl.innerHTML = '';
+
+    // Launch screen
+    const launchWrap = document.createElement('div');
+    launchWrap.className = 'terminal-launch';
+    launchWrap.innerHTML = `
+      <div class="terminal-launch-icon">⌨️</div>
+      <div class="terminal-launch-title">Terminal</div>
+      <div class="terminal-launch-subtitle">A bash session will open on the server.</div>
+      <button id="termLaunchBtn" class="terminal-launch-btn">Launch Terminal</button>
+      <button id="termCancelBtn" class="terminal-cancel-btn">Cancel</button>
+    `;
+    containerEl.appendChild(launchWrap);
+
+    document.getElementById('termLaunchBtn').addEventListener('click', () => {
+      connectTerminal();
+    });
+    document.getElementById('termCancelBtn').addEventListener('click', () => {
+      destroyTerminal();
+    });
+  }
+
+  async function connectTerminal() {
+    const containerEl = document.getElementById('terminal-container');
+    containerEl.innerHTML = '';
+
     // Lazy-load xterm.js and FitAddon from CDN
     try {
       await loadScript('https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js');
@@ -259,15 +292,6 @@
       showCenter('Failed to load terminal library.', false, 'Back', destroyTerminal);
       return;
     }
-
-    // Switch layout: hide canvas content, show terminal pane
-    document.getElementById('content').style.display = 'none';
-    document.querySelector('.topbar').style.display = 'none';
-    const pane = document.getElementById('terminal-pane');
-    pane.style.display = 'flex';
-
-    const containerEl = document.getElementById('terminal-container');
-    containerEl.innerHTML = '';
 
     // Init xterm
     const term = new Terminal({
@@ -301,7 +325,6 @@
 
     termInstance = term;
 
-    // Connect to /ws/terminal
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${proto}//${location.host}/ws/terminal?token=${encodeURIComponent(jwt)}`;
     const tws = new WebSocket(wsUrl);
@@ -355,9 +378,9 @@
       return;
     }
 
-    // Terminal mode
+    // Terminal mode — show launch screen; PTY only connects on explicit user tap
     if (payload.format === 'terminal') {
-      initTerminal();
+      showTerminalLaunchScreen();
       return;
     }
 
