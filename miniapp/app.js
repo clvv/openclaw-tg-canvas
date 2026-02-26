@@ -256,6 +256,7 @@
   }
 
   async function connectTerminal() {
+    const pane = document.getElementById('terminal-pane');
     const containerEl = document.getElementById('terminal-container');
     containerEl.innerHTML = '';
 
