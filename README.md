@@ -2,7 +2,13 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-openclaw--tg--canvas-blue)](https://clawhub.ai/skills/openclaw-tg-canvas)
 
-This package provides a Telegram Mini App that renders agent-generated HTML or markdown in a secure canvas. Only approved Telegram user IDs can view the content, and the Mini App authenticates sessions using Telegram `initData` verification.
+This skill provides a Telegram Mini App with three capabilities:
+
+1. **Canvas rendering** — push HTML, markdown, or A2UI content to a live canvas in the Mini App.
+2. **Interactive terminal** *(opt-in, JWT-gated)* — a browser-based terminal backed by a server-side PTY (bash shell). This is a significant privilege: it grants shell access to the machine running the server, scoped to the process user. Only users in `ALLOWED_USER_IDS` can open it.
+3. **OpenClaw Control UI proxy** *(opt-in, off by default)* — proxies `/oc/*` to a local OpenClaw gateway. Requires `ENABLE_OPENCLAW_PROXY=true` and optionally `OPENCLAW_GATEWAY_TOKEN`. The server does **not** read any local credential files automatically.
+
+Only approved Telegram user IDs (via `ALLOWED_USER_IDS`) can access any authenticated feature. Sessions are verified via Telegram `initData` HMAC-SHA256.
 
 **Links:** [GitHub](https://github.com/clvv/openclaw-tg-canvas) · [ClawHub](https://clawhub.ai/skills/openclaw-tg-canvas)
 
@@ -42,15 +48,17 @@ This package provides a Telegram Mini App that renders agent-generated HTML or m
 | `POST /push` | ❌ not public-safe by IP alone | **`PUSH_TOKEN` required** + loopback check |
 | `POST /clear` | ❌ not public-safe by IP alone | **`PUSH_TOKEN` required** + loopback check |
 | `GET /health` | ❌ loopback-only | Loopback check |
-| `GET/WS /oc/*` | ✅ | JWT required (tg-canvas auth) + server-side gateway proxy auth |
+| `GET/WS /ws/terminal` | ✅ | JWT required — **opens a bash PTY on the server** |
+| `GET/WS /oc/*` | ✅ (when enabled) | JWT required; only available when `ENABLE_OPENCLAW_PROXY=true` |
 
-> ⚠️ Tunnel note: when using cloudflared, remote requests reach the app through a local TCP connection and can appear as loopback. Do **not** rely on loopback IP checks alone for privileged endpoints.
+> ⚠️ **Cloudflared loopback bypass:** `cloudflared` connects to the server via local TCP, so all tunnel traffic appears as `127.0.0.1`. The loopback IP check does **not** protect `/push` or `/clear` from remote callers when a tunnel is active. `PUSH_TOKEN` is enforced at startup to compensate.
 
 **Recommendations:**
-- `PUSH_TOKEN` is mandatory (server refuses startup without it).
+- `PUSH_TOKEN` is **required** — the server refuses to start without it. Generate: `openssl rand -hex 32`
 - Use a strong random `JWT_SECRET` (32+ bytes).
-- Keep `BOT_TOKEN`, `JWT_SECRET`, `PUSH_TOKEN`, and gateway token secret.
-- If using Control UI through `/oc/*`, add Mini App origin(s) to `gateway.controlUi.allowedOrigins` (e.g. `https://your-canvas-url.example.com`).
+- Keep `BOT_TOKEN`, `JWT_SECRET`, and `PUSH_TOKEN` secret; rotate if compromised.
+- The terminal feature grants shell access to the server as the process user. Ensure `ALLOWED_USER_IDS` is tightly controlled.
+- `ENABLE_OPENCLAW_PROXY` is **off by default**. Only enable it intentionally.
 
 ## HTTPS via nginx + Let's Encrypt (domain-based, no Cloudflare)
 
@@ -109,22 +117,45 @@ curl -6 https://canvas.example.com/
 
 If IPv6 fails, add `listen [::]:80` / `listen [::]:443` or remove the AAAA record.
 
-## OpenClaw Control UI via tg-canvas (auth-gated)
+## Interactive Terminal
 
-This skill can proxy OpenClaw Control UI through the Mini App under `/oc/*`.
+The Mini App includes a browser-based terminal backed by a server-side PTY.
 
-- Entry URL: `/oc/?token=<tg-canvas-jwt>` (bootstrap), then cookie-backed session.
-- Assets/API/WS are proxied through tg-canvas and remain gated by tg-canvas auth.
-- Upstream gateway auth is injected server-side (never exposed to browser JS).
+> ⚠️ **This is a high-privilege feature.** The terminal opens a bash session as the server process user. Anyone authenticated via `ALLOWED_USER_IDS` can run arbitrary shell commands on the server. Ensure `ALLOWED_USER_IDS` contains only users you trust with shell access.
 
-Environment flags:
+**How it works:**
+- The Mini App topbar shows a **Terminal** button once authenticated.
+- Tapping it opens a full-screen xterm.js terminal connected to `/ws/terminal`.
+- The WebSocket is JWT-authenticated (same `ALLOWED_USER_IDS` gate as the canvas).
+- The PTY session runs as the server process user (set `User=` in the systemd unit).
+- A mobile-friendly key toolbar is shown at the bottom: `Ctrl`, `Alt`, `Esc`, `Tab`, arrows.
 
-- `ENABLE_OPENCLAW_PROXY=true` (default)
-- `OPENCLAW_PROXY_HOST=127.0.0.1` (default)
-- `OPENCLAW_PROXY_PORT=18789` (default)
-- Optional `OPENCLAW_GATEWAY_TOKEN` (otherwise auto-loaded from `~/.openclaw/openclaw.json`)
+The terminal feature is always compiled in but requires authentication — it is not separately togglable via env var.
 
-For proxied Control UI websocket to be accepted, configure OpenClaw:
+## OpenClaw Control UI Proxy (opt-in)
+
+This skill can optionally proxy the OpenClaw Control UI through the Mini App under `/oc/*`.
+
+**This feature is off by default.** Enable it explicitly:
+
+```env
+ENABLE_OPENCLAW_PROXY=true
+```
+
+When enabled:
+- `/oc/*` HTTP and WebSocket requests are proxied to the local OpenClaw gateway.
+- If `OPENCLAW_GATEWAY_TOKEN` is set, it is injected as `Authorization: Bearer` on proxied requests.
+- The server does **not** read `~/.openclaw/openclaw.json` or any other local credential file. The token must be supplied explicitly via env var.
+
+Other proxy env vars (all optional, used only when proxy is enabled):
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENCLAW_PROXY_HOST` | `127.0.0.1` | Hostname of the local OpenClaw gateway |
+| `OPENCLAW_PROXY_PORT` | `18789` | Port of the local OpenClaw gateway |
+| `OPENCLAW_GATEWAY_TOKEN` | *(unset)* | Auth token injected into proxied requests |
+
+For the proxied Control UI WebSocket to be accepted, add the Mini App origin to OpenClaw gateway config:
 
 ```json
 {
@@ -221,11 +252,14 @@ sudo systemctl status tg-canvas
 
 Ensure `SKILL.md`, scripts, and `.env.example` are included. Tag the repo with a version and publish according to ClawhHub guidelines.
 
-## Security
+## Security Summary
 
-Telegram Mini Apps pass a signed `initData` payload. The server validates this signature using your bot token, enforces `auth_date` freshness, and restricts access to `ALLOWED_USER_IDS`. JWTs are short-lived (`JWT_TTL_SECONDS`). The `/push` endpoint listens only on loopback and should never be exposed publicly. **If you expose /push beyond loopback, set `PUSH_TOKEN`.**
-
-Also protect secrets: keep `.env` permissions tight (e.g., `chmod 600 .env`) or use a secrets store.
+- **Auth:** Telegram `initData` HMAC-SHA256 verified against `BOT_TOKEN`; `auth_date` freshness enforced; access restricted to `ALLOWED_USER_IDS`.
+- **JWTs** are short-lived (`JWT_TTL_SECONDS`, default 15 min).
+- **`PUSH_TOKEN` is required** — the server exits at startup without it. The loopback IP check alone is insufficient when `cloudflared` is active.
+- **Terminal** grants real shell access. Only list users in `ALLOWED_USER_IDS` who should have shell access to your server.
+- **Proxy** is off by default (`ENABLE_OPENCLAW_PROXY` must be set to `"true"` explicitly). No local credential files are read automatically.
+- Keep `.env` permissions tight (`chmod 600 .env`) and rotate secrets if compromised.
 
 ## Canvas Learnings (from live testing)
 

@@ -1,6 +1,6 @@
 ---
 name: tg-canvas
-description: "Telegram Mini App Canvas. Renders agent-generated content (HTML, markdown) in a Telegram Mini App. Authenticated via Telegram initData — only approved users can view. Push content with `tg-canvas push` or via the /push API."
+description: "Telegram Mini App Canvas with terminal and optional Control UI proxy. Renders agent-generated content (HTML, markdown, A2UI) in a Telegram Mini App; push with `tg-canvas push`. Includes a JWT-gated browser terminal (server-side PTY/bash — high privilege, shell access to server). Optionally proxies OpenClaw Control UI via ENABLE_OPENCLAW_PROXY=true (off by default; no local files read)."
 homepage: https://github.com/clvv/openclaw-tg-canvas
 kind: server
 metadata:
@@ -115,6 +115,20 @@ When using `/oc/*` over a public origin, add that origin to OpenClaw gateway con
   }
 }
 ```
+
+## Terminal (high-privilege feature)
+
+The Mini App includes an interactive terminal backed by a server-side PTY.
+
+> ⚠️ **This grants shell access to the machine running the server**, as the process user. Anyone in `ALLOWED_USER_IDS` can open a bash session and run arbitrary commands. Only add users you trust with shell access to `ALLOWED_USER_IDS`.
+
+**How it works:**
+- Authenticated users see a **Terminal** button in the Mini App topbar.
+- Tapping it opens xterm.js connected to `/ws/terminal` (JWT required).
+- A PTY (bash) is spawned per WebSocket connection; killed when the connection closes.
+- Mobile toolbar provides Ctrl/Alt sticky modifiers, Esc, Tab, arrow keys.
+
+**Runtime scope:** `node-pty` spawns a bash process as the server process user. No additional env vars control this; auth is the only gate.
 
 ## Commands
 
