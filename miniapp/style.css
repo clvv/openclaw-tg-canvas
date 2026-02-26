@@ -244,6 +244,55 @@ html, body {
   padding: 4px;
 }
 
+/* Mobile key toolbar */
+.term-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #161b22;
+  border-top: 1px solid #30363d;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
+  /* hide scrollbar but keep scrollability */
+  scrollbar-width: none;
+}
+.term-toolbar::-webkit-scrollbar { display: none; }
+
+.tbkey {
+  flex-shrink: 0;
+  background: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 7px;
+  padding: 0 14px;
+  height: 36px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition: background 120ms, color 120ms;
+}
+
+.tbkey-arrow {
+  padding: 0 10px;
+  font-size: 16px;
+}
+
+.tbkey-mod {
+  min-width: 52px;
+}
+
+.tbkey.active {
+  background: #388bfd;
+  color: #fff;
+  border-color: #388bfd;
+}
+
 /* Make xterm fill its container */
 #terminal-container .xterm {
   height: 100%;

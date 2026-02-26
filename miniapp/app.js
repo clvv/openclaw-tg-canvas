@@ -236,7 +236,11 @@
     if (termResizeObserver) { try { termResizeObserver.disconnect(); } catch (_) {} termResizeObserver = null; }
     if (termWs) { try { termWs.close(); } catch (_) {} termWs = null; }
     if (termInstance) { try { termInstance.dispose(); } catch (_) {} termInstance = null; }
-    document.getElementById('terminal-pane').style.display = 'none';
+    const pane = document.getElementById('terminal-pane');
+    pane.style.display = 'none';
+    // Remove dynamically built toolbar so it's fresh on next open
+    pane.querySelector('.term-toolbar')?.remove();
+    document.getElementById('terminal-container').innerHTML = '';
     // Canvas content and topbar are unaffected — they stay visible underneath
   }
 
@@ -301,8 +305,24 @@
     const tws = new WebSocket(wsUrl);
     termWs = tws;
 
+    // ---- Sticky modifiers ----
+    let ctrlActive = false;
+    let altActive = false;
+
+    function setModifier(mod, on) {
+      if (mod === 'ctrl') ctrlActive = on;
+      if (mod === 'alt') altActive = on;
+      const btn = pane.querySelector(`.tbkey[data-mod="${mod}"]`);
+      if (btn) btn.classList.toggle('active', on);
+    }
+
+    function sendRaw(data) {
+      if (tws.readyState === WebSocket.OPEN) {
+        tws.send(JSON.stringify({ type: 'data', data }));
+      }
+    }
+
     tws.onopen = () => {
-      // Send initial size
       const dims = fitAddon.proposeDimensions();
       if (dims) tws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
     };
@@ -321,14 +341,58 @@
       if (termInstance) termInstance.writeln('\r\n\x1b[31m[Connection closed]\x1b[0m');
     };
 
-    // Keyboard input → WS
+    // Keyboard input → WS (apply sticky modifiers)
     term.onData((data) => {
-      if (tws.readyState === WebSocket.OPEN) {
-        tws.send(JSON.stringify({ type: 'data', data }));
+      let out = data;
+      if (ctrlActive && data.length === 1) {
+        out = String.fromCharCode(data.charCodeAt(0) & 0x1f);
+        setModifier('ctrl', false);
+      } else if (altActive && data.length === 1) {
+        out = '\x1b' + data;
+        setModifier('alt', false);
       }
+      sendRaw(out);
     });
 
-    // Resize: observe container, fit, send new dims to server
+    // ---- Mobile toolbar ----
+    const TOOLBAR_KEYS = [
+      { label: 'Ctrl', mod: 'ctrl' },
+      { label: 'Alt',  mod: 'alt'  },
+      { label: 'Esc',  seq: '\x1b' },
+      { label: 'Tab',  seq: '\t'   },
+      { label: '↑',    seq: '\x1b[A', arrow: true },
+      { label: '↓',    seq: '\x1b[B', arrow: true },
+      { label: '←',    seq: '\x1b[D', arrow: true },
+      { label: '→',    seq: '\x1b[C', arrow: true },
+    ];
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'term-toolbar';
+
+    TOOLBAR_KEYS.forEach(({ label, mod, seq, arrow }) => {
+      const btn = document.createElement('button');
+      btn.className = 'tbkey' + (arrow ? ' tbkey-arrow' : '') + (mod ? ' tbkey-mod' : '');
+      if (mod) btn.dataset.mod = mod;
+      btn.textContent = label;
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); // don't steal focus from xterm
+        if (mod) {
+          const current = mod === 'ctrl' ? ctrlActive : altActive;
+          // toggle off the other modifier
+          if (mod === 'ctrl' && altActive) setModifier('alt', false);
+          if (mod === 'alt' && ctrlActive) setModifier('ctrl', false);
+          setModifier(mod, !current);
+        } else {
+          sendRaw(seq);
+          term.focus();
+        }
+      });
+      toolbar.appendChild(btn);
+    });
+
+    pane.appendChild(toolbar);
+
+    // Resize: observe pane, fit, send new dims to server
     termResizeObserver = new ResizeObserver(() => {
       try {
         fitAddon.fit();
