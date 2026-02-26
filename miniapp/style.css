@@ -190,7 +190,7 @@ html, body {
   }
 }
 
-/* Terminal mode */
+/* Terminal overlay — covers everything, canvas preserved underneath */
 .terminal-pane {
   position: fixed;
   inset: 0;
@@ -198,7 +198,43 @@ html, body {
   flex-direction: column;
   background: #0d1117;
   z-index: 100;
-  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.terminal-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  flex-shrink: 0;
+}
+
+.terminal-topbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #8b949e;
+  letter-spacing: 0.2px;
+}
+
+.terminal-close-btn {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  font-size: 16px;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
 }
 
 #terminal-container {

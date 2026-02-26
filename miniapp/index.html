@@ -21,7 +21,10 @@
           <span id="connDot" class="conn-dot" aria-hidden="true"></span>
           <span id="connText" class="conn-text">Connecting…</span>
         </div>
-        <button id="openControlBtn" class="button" style="margin-left:8px; padding:6px 10px;">Control</button>
+        <div class="topbar-actions">
+          <button id="openTerminalBtn" class="button" style="padding:6px 10px;">Terminal</button>
+          <button id="openControlBtn" class="button" style="padding:6px 10px;">Control</button>
+        </div>
       </header>
 
       <main id="content" class="content" role="main">
@@ -30,8 +33,12 @@
         </div>
       </main>
 
-      <!-- Terminal mode — hidden until activated -->
+      <!-- Terminal overlay — sits on top of canvas, canvas state preserved underneath -->
       <div id="terminal-pane" class="terminal-pane" style="display:none" aria-label="Terminal">
+        <div class="terminal-topbar">
+          <span class="terminal-topbar-title">Terminal</span>
+          <button id="closeTerminalBtn" class="terminal-close-btn" aria-label="Close terminal">✕</button>
+        </div>
         <div id="terminal-container"></div>
       </div>
     </div>

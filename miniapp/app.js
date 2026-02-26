@@ -14,6 +14,8 @@
   const connText = document.getElementById('connText');
   const lastUpdatedEl = document.getElementById('lastUpdated');
   const openControlBtn = document.getElementById('openControlBtn');
+  const openTerminalBtn = document.getElementById('openTerminalBtn');
+  const closeTerminalBtn = document.getElementById('closeTerminalBtn');
   let openingControl = false;
 
   let jwt = null;
@@ -235,8 +237,7 @@
     if (termWs) { try { termWs.close(); } catch (_) {} termWs = null; }
     if (termInstance) { try { termInstance.dispose(); } catch (_) {} termInstance = null; }
     document.getElementById('terminal-pane').style.display = 'none';
-    document.getElementById('content').style.display = '';
-    document.querySelector('.topbar').style.display = '';
+    // Canvas content and topbar are unaffected — they stay visible underneath
   }
 
   function loadScript(src) {
@@ -251,9 +252,7 @@
   }
 
   function showTerminalLaunchScreen() {
-    // Switch layout: hide canvas content, show terminal pane with launch button
-    document.getElementById('content').style.display = 'none';
-    document.querySelector('.topbar').style.display = 'none';
+    // Show terminal pane as overlay — canvas and topbar remain untouched underneath
     const pane = document.getElementById('terminal-pane');
     pane.style.display = 'flex';
 
@@ -266,17 +265,13 @@
     launchWrap.innerHTML = `
       <div class="terminal-launch-icon">⌨️</div>
       <div class="terminal-launch-title">Terminal</div>
-      <div class="terminal-launch-subtitle">A bash session will open on the server.</div>
-      <button id="termLaunchBtn" class="terminal-launch-btn">Launch Terminal</button>
-      <button id="termCancelBtn" class="terminal-cancel-btn">Cancel</button>
+      <div class="terminal-launch-subtitle">Opens a bash session on the server.</div>
+      <button id="termLaunchBtn" class="terminal-launch-btn">Connect</button>
     `;
     containerEl.appendChild(launchWrap);
 
     document.getElementById('termLaunchBtn').addEventListener('click', () => {
       connectTerminal();
-    });
-    document.getElementById('termCancelBtn').addEventListener('click', () => {
-      destroyTerminal();
     });
   }
 
@@ -289,7 +284,7 @@
       await loadScript('https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js');
       await loadScript('https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js');
     } catch (e) {
-      showCenter('Failed to load terminal library.', false, 'Back', destroyTerminal);
+      containerEl.innerHTML = '<div style="color:#ff7b72;padding:16px">Failed to load terminal library.</div>';
       return;
     }
 
@@ -378,12 +373,6 @@
       return;
     }
 
-    // Terminal mode — show launch screen; PTY only connects on explicit user tap
-    if (payload.format === 'terminal') {
-      showTerminalLaunchScreen();
-      return;
-    }
-
     const { format, content } = payload;
     contentEl.innerHTML = '';
 
@@ -430,6 +419,18 @@
       const data = await res.json();
       if (!data?.token) throw new Error('no_token');
       jwt = data.token;
+
+      if (openTerminalBtn) {
+        openTerminalBtn.onclick = () => {
+          showTerminalLaunchScreen();
+        };
+      }
+
+      if (closeTerminalBtn) {
+        closeTerminalBtn.onclick = () => {
+          destroyTerminal();
+        };
+      }
 
       if (openControlBtn) {
         openControlBtn.onclick = () => {
@@ -486,9 +487,6 @@
         }
         if (msg.type === 'canvas') {
           renderPayload(msg);
-        }
-        if (msg.type === 'clear') {
-          destroyTerminal();
         }
       } catch (e) {
         // ignore malformed message
