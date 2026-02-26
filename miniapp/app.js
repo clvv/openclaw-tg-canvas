@@ -251,30 +251,6 @@
     });
   }
 
-  function showTerminalLaunchScreen() {
-    // Show terminal pane as overlay — canvas and topbar remain untouched underneath
-    const pane = document.getElementById('terminal-pane');
-    pane.style.display = 'flex';
-
-    const containerEl = document.getElementById('terminal-container');
-    containerEl.innerHTML = '';
-
-    // Launch screen
-    const launchWrap = document.createElement('div');
-    launchWrap.className = 'terminal-launch';
-    launchWrap.innerHTML = `
-      <div class="terminal-launch-icon">⌨️</div>
-      <div class="terminal-launch-title">Terminal</div>
-      <div class="terminal-launch-subtitle">Opens a bash session on the server.</div>
-      <button id="termLaunchBtn" class="terminal-launch-btn">Connect</button>
-    `;
-    containerEl.appendChild(launchWrap);
-
-    document.getElementById('termLaunchBtn').addEventListener('click', () => {
-      connectTerminal();
-    });
-  }
-
   async function connectTerminal() {
     const containerEl = document.getElementById('terminal-container');
     containerEl.innerHTML = '';
@@ -422,7 +398,8 @@
 
       if (openTerminalBtn) {
         openTerminalBtn.onclick = () => {
-          showTerminalLaunchScreen();
+          document.getElementById('terminal-pane').style.display = 'flex';
+          connectTerminal();
         };
       }
 
