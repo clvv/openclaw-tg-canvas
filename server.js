@@ -10,6 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
+const pty = require("node-pty");
 
 // ---- Config ----
 const BOT_TOKEN = process.env.BOT_TOKEN || "";
@@ -563,8 +564,67 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// ---- WebSocket server ----
+// ---- WebSocket server (canvas) ----
 const wss = new WebSocketServer({ noServer: true });
+
+// ---- WebSocket server (terminal) ----
+const termWss = new WebSocketServer({ noServer: true });
+
+termWss.on("connection", (ws, req, payload) => {
+  const shell = process.env.SHELL || "/bin/bash";
+  const cols = 80;
+  const rows = 24;
+
+  let term;
+  try {
+    term = pty.spawn(shell, [], {
+      name: "xterm-256color",
+      cols,
+      rows,
+      cwd: process.env.HOME || "/",
+      env: { ...process.env, TERM: "xterm-256color" },
+    });
+  } catch (err) {
+    ws.send(JSON.stringify({ type: "exit", code: -1, error: String(err) }));
+    ws.close();
+    return;
+  }
+
+  // PTY → WS
+  term.onData((data) => {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "data", data }));
+    }
+  });
+
+  term.onExit(({ exitCode }) => {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "exit", code: exitCode }));
+      ws.close();
+    }
+  });
+
+  // WS → PTY
+  ws.on("message", (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === "data" && typeof msg.data === "string") {
+        term.write(msg.data);
+      } else if (msg.type === "resize" && msg.cols && msg.rows) {
+        term.resize(
+          Math.max(2, Math.min(500, msg.cols)),
+          Math.max(1, Math.min(200, msg.rows))
+        );
+      }
+    } catch (_) {
+      // ignore malformed
+    }
+  });
+
+  ws.on("close", () => {
+    try { term.kill(); } catch (_) {}
+  });
+});
 
 wss.on("connection", (ws, req, payload) => {
   wsClients.add(ws);
@@ -689,7 +749,7 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  if (url.pathname !== "/ws") {
+  if (url.pathname !== "/ws" && url.pathname !== "/ws/terminal") {
     socket.destroy();
     return;
   }
@@ -704,6 +764,12 @@ server.on("upgrade", (req, socket, head) => {
   if (!payload) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
+    return;
+  }
+  if (url.pathname === "/ws/terminal") {
+    termWss.handleUpgrade(req, socket, head, (ws) => {
+      termWss.emit("connection", ws, req, payload);
+    });
     return;
   }
   wss.handleUpgrade(req, socket, head, (ws) => {

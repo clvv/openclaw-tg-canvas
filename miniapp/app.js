@@ -225,9 +225,139 @@
     container.appendChild(pre);
   }
 
+  // ---------- Terminal ----------
+  let termInstance = null;
+  let termWs = null;
+  let termResizeObserver = null;
+
+  function destroyTerminal() {
+    if (termResizeObserver) { try { termResizeObserver.disconnect(); } catch (_) {} termResizeObserver = null; }
+    if (termWs) { try { termWs.close(); } catch (_) {} termWs = null; }
+    if (termInstance) { try { termInstance.dispose(); } catch (_) {} termInstance = null; }
+    document.getElementById('terminal-pane').style.display = 'none';
+    document.getElementById('content').style.display = '';
+    document.querySelector('.topbar').style.display = '';
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  async function initTerminal() {
+    // Lazy-load xterm.js and FitAddon from CDN
+    try {
+      await loadScript('https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js');
+      await loadScript('https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js');
+    } catch (e) {
+      showCenter('Failed to load terminal library.', false, 'Back', destroyTerminal);
+      return;
+    }
+
+    // Switch layout: hide canvas content, show terminal pane
+    document.getElementById('content').style.display = 'none';
+    document.querySelector('.topbar').style.display = 'none';
+    const pane = document.getElementById('terminal-pane');
+    pane.style.display = 'flex';
+
+    const containerEl = document.getElementById('terminal-container');
+    containerEl.innerHTML = '';
+
+    // Init xterm
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
+      theme: {
+        background: '#0d1117',
+        foreground: '#c9d1d9',
+        cursor: '#58a6ff',
+        selectionBackground: '#264f78',
+        black: '#000000', red: '#ff7b72', green: '#3fb950', yellow: '#d29922',
+        blue: '#58a6ff', magenta: '#bc8cff', cyan: '#39c5cf', white: '#b1bac4',
+        brightBlack: '#6e7681', brightRed: '#ffa198', brightGreen: '#56d364',
+        brightYellow: '#e3b341', brightBlue: '#79c0ff', brightMagenta: '#d2a8ff',
+        brightCyan: '#56d4dd', brightWhite: '#ffffff',
+      },
+      allowTransparency: false,
+      scrollback: 1000,
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(containerEl);
+
+    // Fit after paint
+    requestAnimationFrame(() => {
+      fitAddon.fit();
+      term.focus();
+    });
+
+    termInstance = term;
+
+    // Connect to /ws/terminal
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${proto}//${location.host}/ws/terminal?token=${encodeURIComponent(jwt)}`;
+    const tws = new WebSocket(wsUrl);
+    termWs = tws;
+
+    tws.onopen = () => {
+      // Send initial size
+      const dims = fitAddon.proposeDimensions();
+      if (dims) tws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+    };
+
+    tws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'data') term.write(msg.data);
+        else if (msg.type === 'exit') {
+          term.writeln(`\r\n\x1b[33m[Process exited with code ${msg.code}]\x1b[0m`);
+        }
+      } catch (_) {}
+    };
+
+    tws.onclose = () => {
+      if (termInstance) termInstance.writeln('\r\n\x1b[31m[Connection closed]\x1b[0m');
+    };
+
+    // Keyboard input → WS
+    term.onData((data) => {
+      if (tws.readyState === WebSocket.OPEN) {
+        tws.send(JSON.stringify({ type: 'data', data }));
+      }
+    });
+
+    // Resize: observe container, fit, send new dims to server
+    termResizeObserver = new ResizeObserver(() => {
+      try {
+        fitAddon.fit();
+        const dims = fitAddon.proposeDimensions();
+        if (dims && tws.readyState === WebSocket.OPEN) {
+          tws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+        }
+      } catch (_) {}
+    });
+    termResizeObserver.observe(pane);
+  }
+
+  // ---------- Rendering ----------
   function renderPayload(payload) {
     if (!payload || payload.type === 'clear') {
+      destroyTerminal();
       showCenter('Waiting for content…');
+      return;
+    }
+
+    // Terminal mode
+    if (payload.format === 'terminal') {
+      initTerminal();
       return;
     }
 
@@ -333,6 +463,9 @@
         }
         if (msg.type === 'canvas') {
           renderPayload(msg);
+        }
+        if (msg.type === 'clear') {
+          destroyTerminal();
         }
       } catch (e) {
         // ignore malformed message

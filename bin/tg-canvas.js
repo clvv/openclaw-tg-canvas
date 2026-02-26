@@ -9,8 +9,9 @@ const PUSH_TOKEN = process.env.PUSH_TOKEN || "";
 
 function usage(code = 0) {
   console.log(`Usage: tg-canvas <command> [options]
-Commands: push | clear | health
-Options (push): --html | --markdown | --text | --a2ui <json|@file> | --format | --content | --url`);
+Commands: push | clear | health | terminal
+Options (push): --html | --markdown | --text | --a2ui <json|@file> | --format | --content | --url
+terminal: activates terminal mode in the Mini App (clear to exit)`);
   process.exit(code);
 }
 
@@ -42,6 +43,7 @@ async function main(){
   const base = parseFlag("--url") || BASE_URL;
   if (subcmd === "health") return console.log(JSON.stringify(await request("GET", `${base}/health`),null,2));
   if (subcmd === "clear") return console.log(JSON.stringify(await request("POST", `${base}/clear`, {ok:true}),null,2));
+  if (subcmd === "terminal") return console.log(JSON.stringify(await request("POST", `${base}/push`, {format:"terminal",content:""}),null,2));
   if (subcmd !== "push") return usage(1);
 
   const html=parseFlag("--html"), markdown=parseFlag("--markdown"), text=parseFlag("--text"), a2ui=parseFlag("--a2ui");

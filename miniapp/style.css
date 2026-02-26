@@ -190,6 +190,33 @@ html, body {
   }
 }
 
+/* Terminal mode */
+.terminal-pane {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0d1117;
+  z-index: 100;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
+#terminal-container {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 4px;
+}
+
+/* Make xterm fill its container */
+#terminal-container .xterm {
+  height: 100%;
+}
+
+#terminal-container .xterm-viewport {
+  overflow-y: auto !important;
+}
+
 /* Markdown styles */
 .content h1, .content h2, .content h3 {
   margin: 14px 0 8px;

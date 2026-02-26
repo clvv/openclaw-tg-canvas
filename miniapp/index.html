@@ -7,6 +7,8 @@
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="/miniapp/style.css" />
+    <!-- xterm.js (loaded lazily by app.js when terminal mode is activated) -->
+    <link id="xtermCss" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
   </head>
   <body>
     <div id="app" class="app">
@@ -27,6 +29,11 @@
           <!-- Dynamic content rendered here -->
         </div>
       </main>
+
+      <!-- Terminal mode — hidden until activated -->
+      <div id="terminal-pane" class="terminal-pane" style="display:none" aria-label="Terminal">
+        <div id="terminal-container"></div>
+      </div>
     </div>
 
     <script>
